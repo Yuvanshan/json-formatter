@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JSON Viewer &amp; Formatter</title>
+<script>
+  // Apply saved/system theme before first paint to avoid a flash of the wrong theme.
+  (function () {
+    const saved = localStorage.getItem('jsonViewer.theme');
+    const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg-page: #f7f7f8;
+    --bg-surface: #ffffff;
+    --bg-surface-alt: #fafafa;
+    --border: #e2e2e4;
+    --border-soft: #ececee;
+    --text: #1e1e1e;
+    --text-muted: #6b6b70;
+    --text-faint: #9a9a9e;
+    --btn-bg: #ffffff;
+    --btn-border: #d6d6d9;
+    --btn-hover-bg: #f0f0f2;
+    --btn-hover-border: #c4c4c8;
+    --primary-bg: #d97757;
+    --primary-border: #d97757;
+    --primary-hover-bg: #c4674b;
+    --primary-hover-border: #c4674b;
+    --primary-text: #ffffff;
+    --status-ok: #1a7f37;
+    --status-err: #b3261e;
+    --active-bg: #eee7f5;
+    --active-border: #d7c8ea;
+    --node-key: #8b3a8b;
+    --node-string: #1a7f37;
+    --node-number: #1c5fbf;
+    --node-boolean: #b3521e;
+    --node-null: #9a9a9e;
+    --node-punct: #6b6b70;
+    --history-hover-bg: #f0eaf7;
+    --history-hover-border: #e0d3ee;
+    --scrollbar-thumb: #d6d6d9;
+    --search-match-bg: #fff3b0;
+    --search-current-bg: #ffcf40;
+    --input-bg: #ffffff;
+    --input-border: #d6d6d9;
+    --shadow: 0 1px 2px rgba(20, 20, 22, 0.05);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-page: #1b1c1f;
+    --bg-surface: #232427;
+    --bg-surface-alt: #202124;
+    --border: #34353a;
+    --border-soft: #2b2c30;
+    --text: #e7e7ea;
+    --text-muted: #a3a3a8;
+    --text-faint: #78787e;
+    --btn-bg: #2a2b2f;
+    --btn-border: #3c3d42;
+    --btn-hover-bg: #34353a;
+    --btn-hover-border: #48494e;
+    --primary-bg: #d97757;
+    --primary-border: #d97757;
+    --primary-hover-bg: #e5895f;
+    --primary-hover-border: #e5895f;
+    --primary-text: #1b1c1f;
+    --status-ok: #4caf50;
+    --status-err: #f14c4c;
+    --active-bg: #3a2f47;
+    --active-border: #5b4a70;
+    --node-key: #c98ac9;
+    --node-string: #6bc27a;
+    --node-number: #6ea3ef;
+    --node-boolean: #e2985f;
+    --node-null: #8a8a90;
+    --node-punct: #a3a3a8;
+    --history-hover-bg: #322a3a;
+    --history-hover-border: #48395a;
+    --scrollbar-thumb: #45464b;
+    --search-match-bg: #4a3f1a;
+    --search-current-bg: #7a611f;
+    --input-bg: #202124;
+    --input-border: #3c3d42;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg-page);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 12px 20px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    z-index: 1;
+  }
+
+  header h1 {
+    font-size: 15.5px;
+    margin: 0;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  button, .file-btn {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 7px 11px;
+    border-radius: 6px;
+    border: 1px solid var(--btn-border);
+    background: var(--btn-bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, transform .05s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  button:hover, .file-btn:hover {
+    background: var(--btn-hover-bg);
+    border-color: var(--btn-hover-border);
+  }
+
+  button:active { transform: scale(0.97); }
+
+  button.primary {
+    background: var(--primary-bg);
+    border-color: var(--primary-border);
+    color: var(--primary-text);
+  }
+
+  button.primary:hover {
+    background: var(--primary-hover-bg);
+    border-color: var(--primary-hover-border);
+  }
+
+  button.danger { color: var(--status-err); }
+
+  button.btn-sm {
+    font-size: 11.5px;
+    padding: 4px 8px;
+  }
+
+  #themeToggle {
+    font-size: 14px;
+    padding: 7px 10px;
+    line-height: 1;
+  }
+
+  input[type=file] { display: none; }
+
+  main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .editor-panel {
+    flex: 1.2;
+    border-right: 1px solid var(--border);
+  }
+
+  .result-panel {
+    flex: 1.8;
+    background: var(--bg-surface);
+  }
+
+  .history-panel {
+    flex: 0 0 250px;
+    border-left: 1px solid var(--border);
+    background: var(--bg-surface-alt);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-header {
+    padding: 9px 14px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    background: var(--bg-surface-alt);
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  textarea#input {
+    flex: 1;
+    border: none;
+    resize: none;
+    padding: 14px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    outline: none;
+    background: var(--bg-surface);
+    color: var(--text);
+  }
+
+  #status {
+    padding: 7px 14px;
+    font-size: 12px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--text-muted);
+  }
+
+  #status.ok { color: var(--status-ok); }
+  #status.err { color: var(--status-err); }
+
+  /* Search row */
+  .search-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+    flex-wrap: wrap;
+  }
+
+  #searchInput {
+    flex: 1;
+    min-width: 120px;
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text);
+    outline: none;
+  }
+
+  #searchInput:focus {
+    border-color: var(--primary-bg);
+  }
+
+  .search-count {
+    font-size: 11px;
+    color: var(--text-faint);
+    min-width: 44px;
+    text-align: center;
+  }
+
+  .row-divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+    margin: 0 2px;
+  }
+
+  #output {
+    flex: 1;
+    overflow: auto;
+    padding: 14px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  #output.empty {
+    color: var(--text-faint);
+    font-family: inherit;
+    font-size: 13px;
+  }
+
+  .view-toggle {
+    display: flex;
+    gap: 4px;
+  }
+
+  .view-toggle button.active {
+    background: var(--active-bg);
+    border-color: var(--active-border);
+  }
+
+  /* Tree view */
+  .tree { white-space: pre; }
+  .tree ul { list-style: none; margin: 0; padding-left: 18px; }
+  .tree li { position: relative; }
+  .node-key { color: var(--node-key); }
+  .node-string { color: var(--node-string); }
+  .node-number { color: var(--node-number); }
+  .node-boolean { color: var(--node-boolean); }
+  .node-null { color: var(--node-null); }
+  .node-punct { color: var(--node-punct); }
+  .toggle {
+    cursor: pointer;
+    display: inline-block;
+    width: 14px;
+    color: var(--node-punct);
+    user-select: none;
+  }
+  .collapsed > ul { display: none; }
+  .count-badge { color: var(--text-faint); font-style: italic; cursor: pointer; }
+  .count-badge:hover { text-decoration: underline; }
+
+  li.leaf-row, li.node {
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .search-match { background: var(--search-match-bg); border-radius: 3px; }
+  .search-match.search-current { background: var(--search-current-bg); }
+
+  .flash { background: var(--active-bg); border-radius: 3px; }
+
+  /* Plain formatted text view */
+  pre#plainOutput {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+  }
+
+  /* Path bar */
+  .path-bar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 14px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+
+  .path-bar.show { display: flex; }
+
+  #pathText {
+    overflow: auto;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  /* History list */
+  #historyList {
+    flex: 1;
+    overflow: auto;
+    padding: 6px;
+  }
+
+  .history-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    border: 1px solid transparent;
+  }
+
+  .history-item:hover {
+    background: var(--history-hover-bg);
+    border-color: var(--history-hover-border);
+  }
+
+  .history-item .h-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .history-item .h-meta {
+    font-size: 11px;
+    color: var(--text-faint);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .history-item .h-preview {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  .history-empty {
+    padding: 20px 14px;
+    font-size: 12.5px;
+    color: var(--text-faint);
+  }
+
+  .h-clear {
+    background: none;
+    border: none;
+    font-size: 11px;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0;
+  }
+  .h-clear:hover { color: var(--status-err); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧾 JSON Viewer &amp; Formatter</h1>
+  <div class="toolbar">
+    <label class="file-btn" for="fileInput">📂 Open file…</label>
+    <input type="file" id="fileInput" accept="*/*">
+    <button id="formatBtn" class="primary">✨ Format</button>
+    <button id="minifyBtn">📦 Minify</button>
+    <button id="copyBtn">📋 Copy</button>
+    <button id="downloadBtn">⬇️ Download</button>
+    <button id="clearBtn">🗑️ Clear</button>
+    <button id="themeToggle" title="Toggle light/dark mode">🌙</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel editor-panel">
+    <div class="panel-header">Input</div>
+    <textarea id="input" placeholder="Paste JSON here, or use &quot;Open file…&quot; above…" spellcheck="false"></textarea>
+    <div id="status">Nothing formatted yet.</div>
+  </section>
+
+  <section class="panel result-panel">
+    <div class="panel-header">
+      <span>Result</span>
+      <div class="view-toggle">
+        <button id="treeViewBtn" class="active">Tree</button>
+        <button id="plainViewBtn">Plain</button>
+      </div>
+    </div>
+
+    <div class="search-row" id="searchRow">
+      <input type="text" id="searchInput" placeholder="🔍 Search keys or values…">
+      <span class="search-count" id="searchCount"></span>
+      <button class="btn-sm" id="prevMatchBtn" title="Previous match (Shift+Enter)">↑</button>
+      <button class="btn-sm" id="nextMatchBtn" title="Next match (Enter)">↓</button>
+      <span class="row-divider"></span>
+      <button class="btn-sm" id="expandAllBtn">Expand all</button>
+      <button class="btn-sm" id="collapseAllBtn">Collapse all</button>
+    </div>
+
+    <div id="output" class="empty">Formatted or opened JSON will appear here.</div>
+
+    <div class="path-bar" id="pathBar">
+      <span id="pathText"></span>
+      <button class="btn-sm" id="copyPathBtn">Copy path</button>
+    </div>
+  </section>
+
+  <aside class="panel history-panel">
+    <div class="panel-header">
+      <span>History</span>
+      <button class="h-clear" id="clearHistoryBtn">Clear all</button>
+    </div>
+    <div id="historyList"></div>
+  </aside>
+</main>
+
+<script>
+(function () {
+  const STORAGE_KEY = 'jsonViewer.history.v1';
+  const MAX_HISTORY = 30;
+
+  const input = document.getElementById('input');
+  const output = document.getElementById('output');
+  const status = document.getElementById('status');
+  const historyList = document.getElementById('historyList');
+  const searchRow = document.getElementById('searchRow');
+  const searchInput = document.getElementById('searchInput');
+  const searchCount = document.getElementById('searchCount');
+  const pathBar = document.getElementById('pathBar');
+  const pathText = document.getElementById('pathText');
+
+  let lastFormatted = '';
+  let lastParsed = undefined;
+  let currentView = 'tree';
+  let searchableNodes = [];
+  let currentMatches = [];
+  let currentMatchIndex = -1;
+
+  // ---------- History (localStorage) ----------
+  function loadHistory() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistory(list) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  }
+
+  function addToHistory(name, rawText, formattedText) {
+    const list = loadHistory();
+    const entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      name: name || 'Pasted JSON',
+      time: new Date().toISOString(),
+      preview: formattedText.replace(/\s+/g, ' ').slice(0, 120),
+      content: rawText
+    };
+    list.unshift(entry);
+    while (list.length > MAX_HISTORY) list.pop();
+    saveHistory(list);
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const list = loadHistory();
+    historyList.innerHTML = '';
+    if (!list.length) {
+      historyList.innerHTML = '<div class="history-empty">No history yet. Formatted JSON will show up here.</div>';
+      return;
+    }
+    list.forEach((entry) => {
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      const time = new Date(entry.time);
+      const timeStr = time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+        time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      div.innerHTML =
+        '<div class="h-title"></div>' +
+        '<div class="h-meta"><span></span></div>' +
+        '<div class="h-preview"></div>';
+      div.querySelector('.h-title').textContent = entry.name;
+      div.querySelector('.h-meta span').textContent = timeStr;
+      div.querySelector('.h-preview').textContent = entry.preview;
+      div.addEventListener('click', () => {
+        input.value = entry.content;
+        formatJSON();
+      });
+      historyList.appendChild(div);
+    });
+  }
+
+  document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+    if (confirm('Clear all history?')) {
+      saveHistory([]);
+      renderHistory();
+    }
+  });
+
+  // ---------- File open ----------
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      input.value = reader.result;
+      formatJSON(file.name);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  // ---------- Format / Minify ----------
+  function setStatus(msg, ok) {
+    status.textContent = msg;
+    status.className = ok ? 'ok' : 'err';
+  }
+
+  function computeStats(value) {
+    let keys = 0;
+    let maxDepth = 0;
+    (function walk(v, depth) {
+      maxDepth = Math.max(maxDepth, depth);
+      if (Array.isArray(v)) {
+        v.forEach((item) => walk(item, depth + 1));
+      } else if (v !== null && typeof v === 'object') {
+        const ks = Object.keys(v);
+        keys += ks.length;
+        ks.forEach((k) => walk(v[k], depth + 1));
+      }
+    })(value, 0);
+    return { keys, depth: maxDepth };
+  }
+
+  function hidePathBar() {
+    pathBar.classList.remove('show');
+    pathText.textContent = '';
+  }
+
+  function formatJSON(sourceName) {
+    const raw = input.value;
+    hidePathBar();
+    if (!raw.trim()) {
+      setStatus('Nothing to format — paste or open some JSON first.', false);
+      output.className = 'empty';
+      output.textContent = 'Formatted or opened JSON will appear here.';
+      lastFormatted = '';
+      lastParsed = undefined;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      lastParsed = parsed;
+      lastFormatted = JSON.stringify(parsed, null, 2);
+      output.className = '';
+      renderOutput();
+      const size = new Blob([raw]).size;
+      const stats = computeStats(parsed);
+      setStatus('Valid JSON · ' + size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
+      addToHistory(sourceName, raw, lastFormatted);
+    } catch (err) {
+      lastParsed = undefined;
+      lastFormatted = '';
+      output.className = 'empty';
+      output.textContent = 'Could not parse JSON.';
+      setStatus('Invalid JSON — ' + err.message, false);
+    }
+  }
+
+  function minifyJSON() {
+    const raw = input.value;
+    hidePathBar();
+    if (!raw.trim()) {
+      setStatus('Nothing to minify — paste or open some JSON first.', false);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      lastParsed = parsed;
+      const minified = JSON.stringify(parsed);
+      lastFormatted = JSON.stringify(parsed, null, 2);
+      input.value = minified;
+      output.className = '';
+      renderOutput();
+      const stats = computeStats(parsed);
+      setStatus('Minified · ' + new Blob([minified]).size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
+      addToHistory(null, raw, lastFormatted);
+    } catch (err) {
+      setStatus('Invalid JSON — ' + err.message, false);
+    }
+  }
+
+  // ---------- Rendering: tree + plain ----------
+  function renderOutput() {
+    if (lastParsed === undefined) return;
+    if (currentView === 'tree') {
+      searchRow.style.display = 'flex';
+      output.innerHTML = '<div class="tree"></div>';
+      output.querySelector('.tree').appendChild(buildTree(lastParsed));
+      if (searchInput.value.trim()) performSearch(searchInput.value);
+    } else {
+      searchRow.style.display = 'none';
+      output.innerHTML = '<pre id="plainOutput"></pre>';
+      document.getElementById('plainOutput').textContent = lastFormatted;
+    }
+  }
+
+  function isValidIdentifier(k) {
+    return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(String(k));
+  }
+
+  function showPath(path, el) {
+    pathBar.classList.add('show');
+    pathText.textContent = path;
+    if (el) {
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 500);
+    }
+  }
+
+  function expandAncestors(el) {
+    let p = el.parentElement;
+    while (p) {
+      if (p.classList && p.classList.contains('collapsed')) {
+        p.classList.remove('collapsed');
+        const t = p.querySelector(':scope > .toggle');
+        if (t) t.textContent = '▾';
+      }
+      p = p.parentElement;
+    }
+  }
+
+  function buildTree(value) {
+    searchableNodes = [];
+    const wrapper = document.createElement('span');
+
+    function renderValue(v, path) {
+      if (v === null) {
+        const s = document.createElement('span');
+        s.className = 'node-null';
+        s.textContent = 'null';
+        return s;
+      }
+      const t = typeof v;
+      if (t === 'string') {
+        const s = document.createElement('span');
+        s.className = 'node-string';
+        s.textContent = JSON.stringify(v);
+        return s;
+      }
+      if (t === 'number') {
+        const s = document.createElement('span');
+        s.className = 'node-number';
+        s.textContent = String(v);
+        return s;
+      }
+      if (t === 'boolean') {
+        const s = document.createElement('span');
+        s.className = 'node-boolean';
+        s.textContent = String(v);
+        return s;
+      }
+      if (Array.isArray(v)) return renderContainer(v, '[', ']', true, path);
+      if (t === 'object') return renderContainer(v, '{', '}', false, path);
+      const s = document.createElement('span');
+      s.textContent = String(v);
+      return s;
+    }
+
+    function renderContainer(obj, open, close, isArray, path) {
+      const keys = isArray ? obj.map((_, i) => i) : Object.keys(obj);
+      const container = document.createElement('span');
+
+      if (keys.length === 0) {
+        const punct = document.createElement('span');
+        punct.className = 'node-punct';
+        punct.textContent = open + close;
+        container.appendChild(punct);
+        return container;
+      }
+
+      const li = document.createElement('li');
+      li.className = 'node';
+
+      const toggle = document.createElement('span');
+      toggle.className = 'toggle';
+      toggle.textContent = '▾';
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isCollapsed = li.classList.toggle('collapsed');
+        toggle.textContent = isCollapsed ? '▸' : '▾';
+      });
+
+      const openPunct = document.createElement('span');
+      openPunct.className = 'node-punct';
+      openPunct.textContent = open;
+
+      const badge = document.createElement('span');
+      badge.className = 'count-badge';
+      badge.textContent = ' // ' + keys.length + (isArray ? (keys.length === 1 ? ' item' : ' items') : (keys.length === 1 ? ' key' : ' keys'));
+      badge.title = 'Click to show path';
+      badge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showPath(path, li);
+      });
+
+      const closePunct = document.createElement('span');
+      closePunct.className = 'node-punct';
+      closePunct.textContent = close;
+
+      const ul = document.createElement('ul');
+      keys.forEach((k, idx) => {
+        const childLi = document.createElement('li');
+        childLi.className = 'leaf-row';
+        const childPath = path + (isArray ? ('[' + idx + ']') : ('.' + (isValidIdentifier(k) ? k : JSON.stringify(k))));
+        childLi.dataset.path = childPath;
+
+        let keyLabel = '';
+        if (!isArray) {
+          const keySpan = document.createElement('span');
+          keySpan.className = 'node-key';
+          keyLabel = JSON.stringify(k);
+          keySpan.textContent = keyLabel;
+          childLi.appendChild(keySpan);
+          const colon = document.createElement('span');
+          colon.className = 'node-punct';
+          colon.textContent = ': ';
+          childLi.appendChild(colon);
+        }
+
+        const val = obj[k];
+        const isScalar = val === null || ['string', 'number', 'boolean'].includes(typeof val);
+        childLi.appendChild(renderValue(val, childPath));
+
+        if (idx < keys.length - 1) {
+          const comma = document.createElement('span');
+          comma.className = 'node-punct';
+          comma.textContent = ',';
+          childLi.appendChild(comma);
+        }
+
+        childLi.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showPath(childPath, childLi);
+        });
+
+        const valueText = isScalar ? (val === null ? 'null' : (typeof val === 'string' ? val : String(val))) : '';
+        searchableNodes.push({ el: childLi, text: (keyLabel + ' ' + valueText).toLowerCase(), path: childPath });
+
+        ul.appendChild(childLi);
+      });
+
+      li.appendChild(toggle);
+      li.appendChild(openPunct);
+      li.appendChild(badge);
+      li.appendChild(ul);
+      li.appendChild(closePunct);
+      container.appendChild(li);
+      return container;
+    }
+
+    const root = document.createElement('ul');
+    root.style.paddingLeft = '0';
+    const rootLi = document.createElement('li');
+    rootLi.style.listStyle = 'none';
+    rootLi.appendChild(renderValue(value, '$'));
+    root.appendChild(rootLi);
+    wrapper.appendChild(root);
+    return wrapper;
+  }
+
+  // ---------- Search ----------
+  function clearSearchHighlights() {
+    document.querySelectorAll('.search-match').forEach((el) => el.classList.remove('search-match', 'search-current'));
+  }
+
+  function updateSearchCount() {
+    if (!currentMatches.length) {
+      searchCount.textContent = searchInput.value.trim() ? '0 / 0' : '';
+    } else {
+      searchCount.textContent = (currentMatchIndex + 1) + ' / ' + currentMatches.length;
+    }
+  }
+
+  function focusMatch() {
+    currentMatches.forEach((n) => n.el.classList.remove('search-current'));
+    const m = currentMatches[currentMatchIndex];
+    if (!m) return;
+    m.el.classList.add('search-current');
+    m.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function performSearch(rawQuery) {
+    clearSearchHighlights();
+    const query = rawQuery.trim().toLowerCase();
+    currentMatches = [];
+    currentMatchIndex = -1;
+    if (!query) {
+      updateSearchCount();
+      return;
+    }
+    searchableNodes.forEach((n) => {
+      if (n.text.includes(query)) currentMatches.push(n);
+    });
+    currentMatches.forEach((n) => {
+      expandAncestors(n.el);
+      n.el.classList.add('search-match');
+    });
+    if (currentMatches.length) {
+      currentMatchIndex = 0;
+      focusMatch();
+    }
+    updateSearchCount();
+  }
+
+  function goToMatch(delta) {
+    if (!currentMatches.length) return;
+    currentMatchIndex = (currentMatchIndex + delta + currentMatches.length) % currentMatches.length;
+    focusMatch();
+    updateSearchCount();
+  }
+
+  searchInput.addEventListener('input', () => performSearch(searchInput.value));
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      goToMatch(e.shiftKey ? -1 : 1);
+    }
+  });
+  document.getElementById('prevMatchBtn').addEventListener('click', () => goToMatch(-1));
+  document.getElementById('nextMatchBtn').addEventListener('click', () => goToMatch(1));
+
+  // ---------- Expand / Collapse all ----------
+  function setAllCollapsed(collapsed) {
+    output.querySelectorAll('.node').forEach((li) => {
+      li.classList.toggle('collapsed', collapsed);
+      const t = li.querySelector(':scope > .toggle');
+      if (t) t.textContent = collapsed ? '▸' : '▾';
+    });
+  }
+  document.getElementById('expandAllBtn').addEventListener('click', () => setAllCollapsed(false));
+  document.getElementById('collapseAllBtn').addEventListener('click', () => setAllCollapsed(true));
+
+  // ---------- Path bar ----------
+  document.getElementById('copyPathBtn').addEventListener('click', async () => {
+    if (!pathText.textContent) return;
+    try {
+      await navigator.clipboard.writeText(pathText.textContent);
+      setStatus('Copied path: ' + pathText.textContent, true);
+    } catch (e) {
+      setStatus('Could not copy path automatically.', false);
+    }
+  });
+
+  // ---------- View toggle ----------
+  document.getElementById('treeViewBtn').addEventListener('click', () => {
+    currentView = 'tree';
+    document.getElementById('treeViewBtn').classList.add('active');
+    document.getElementById('plainViewBtn').classList.remove('active');
+    renderOutput();
+  });
+
+  document.getElementById('plainViewBtn').addEventListener('click', () => {
+    currentView = 'plain';
+    document.getElementById('plainViewBtn').classList.add('active');
+    document.getElementById('treeViewBtn').classList.remove('active');
+    hidePathBar();
+    renderOutput();
+  });
+
+  // ---------- Buttons ----------
+  document.getElementById('formatBtn').addEventListener('click', () => formatJSON());
+  document.getElementById('minifyBtn').addEventListener('click', minifyJSON);
+
+  document.getElementById('copyBtn').addEventListener('click', async () => {
+    if (!lastFormatted) {
+      setStatus('Nothing to copy yet — format some JSON first.', false);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(lastFormatted);
+      setStatus('Copied formatted JSON to clipboard.', true);
+    } catch (e) {
+      setStatus('Could not copy — copy manually from the result panel.', false);
+    }
+  });
+
+  document.getElementById('downloadBtn').addEventListener('click', () => {
+    if (!lastFormatted) {
+      setStatus('Nothing to download yet — format some JSON first.', false);
+      return;
+    }
+    const blob = new Blob([lastFormatted], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'formatted.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    input.value = '';
+    output.className = 'empty';
+    output.textContent = 'Formatted or opened JSON will appear here.';
+    lastFormatted = '';
+    lastParsed = undefined;
+    searchInput.value = '';
+    currentMatches = [];
+    currentMatchIndex = -1;
+    updateSearchCount();
+    hidePathBar();
+    setStatus('Cleared.', true);
+  });
+
+  // Keyboard shortcut: Cmd/Ctrl+Enter to format
+  input.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      formatJSON();
+    }
+  });
+
+  // Auto-format as soon as JSON is pasted in — no need to click "Format".
+  input.addEventListener('paste', () => {
+    setTimeout(() => formatJSON(), 0);
+  });
+
+  renderHistory();
+
+  // ---------- Theme toggle ----------
+  const themeToggle = document.getElementById('themeToggle');
+  const THEME_KEY = 'jsonViewer.theme';
+
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') || 'light';
+  }
+
+  function applyThemeIcon() {
+    themeToggle.textContent = currentTheme() === 'dark' ? '☀️' : '🌙';
+  }
+
+  themeToggle.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem(THEME_KEY, next);
+    applyThemeIcon();
+  });
+
+  applyThemeIcon();
+})();
+</script>
+
+</body>
+</html>
