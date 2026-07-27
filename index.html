@@ -460,7 +460,7 @@
 <main>
   <section class="panel editor-panel">
     <div class="panel-header">Input</div>
-    <textarea id="input" placeholder="Paste JSON here, or use &quot;Open file…&quot; above…" spellcheck="false"></textarea>
+    <textarea id="input" placeholder="Paste JSON, JS-style objects, key: value text, or any text — it will be converted to JSON…" spellcheck="false"></textarea>
     <div id="status">Nothing formatted yet.</div>
   </section>
 
@@ -625,57 +625,111 @@
     pathText.textContent = '';
   }
 
+  // Attempts, in order: strict JSON, lenient JS-object-style repair (quotes/
+  // commas/comments), JSONL (one JSON value per line), "key: value" text, and
+  // finally wraps whatever is left as a plain JSON string. Always returns a
+  // { value, method } pair — never throws — so any pasted text becomes JSON.
+  function attemptJSONify(raw) {
+    try {
+      return { value: JSON.parse(raw), method: 'valid' };
+    } catch (e) { /* fall through */ }
+
+    try {
+      let text = raw;
+      text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+      text = text.replace(/(^|[^:])\/\/.*$/gm, '$1');
+      text = text.replace(/,(\s*[}\]])/g, '$1');
+      text = text.replace(/'((?:\\.|[^'\\])*)'/g, (m, p1) =>
+        '"' + p1.replace(/\\'/g, "'").replace(/"/g, '\\"') + '"');
+      text = text.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
+      return { value: JSON.parse(text), method: 'repaired' };
+    } catch (e) { /* fall through */ }
+
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length > 1) {
+      try {
+        const values = lines.map((l) => JSON.parse(l));
+        return { value: values, method: 'jsonl' };
+      } catch (e) { /* fall through */ }
+    }
+
+    if (lines.length > 0) {
+      const kvRegex = /^["']?([^"':=]+?)["']?\s*[:=]\s*(.*)$/;
+      const obj = {};
+      let matched = 0;
+      lines.forEach((line) => {
+        const m = line.match(kvRegex);
+        if (!m) return;
+        matched++;
+        const key = m[1].trim();
+        const valRaw = m[2].trim().replace(/,$/, '');
+        let val;
+        try {
+          val = JSON.parse(valRaw);
+        } catch (e) {
+          if (/^(true|false)$/i.test(valRaw)) val = valRaw.toLowerCase() === 'true';
+          else if (valRaw !== '' && !isNaN(Number(valRaw))) val = Number(valRaw);
+          else val = valRaw.replace(/^["']|["']$/g, '');
+        }
+        obj[key] = val;
+      });
+      if (matched === lines.length) {
+        return { value: obj, method: 'keyvalue' };
+      }
+    }
+
+    return { value: raw, method: 'text' };
+  }
+
+  function methodStatus(method) {
+    switch (method) {
+      case 'valid': return 'Valid JSON';
+      case 'repaired': return 'Auto-fixed JSON (quotes/commas/comments)';
+      case 'jsonl': return 'Converted line-delimited JSON to an array';
+      case 'keyvalue': return 'Converted key/value text to JSON';
+      default: return 'Not JSON — wrapped input as a JSON string';
+    }
+  }
+
   function formatJSON(sourceName) {
     const raw = input.value;
     hidePathBar();
     if (!raw.trim()) {
-      setStatus('Nothing to format — paste or open some JSON first.', false);
+      setStatus('Nothing to format — paste or open some text first.', false);
       output.className = 'empty';
       output.textContent = 'Formatted or opened JSON will appear here.';
       lastFormatted = '';
       lastParsed = undefined;
       return;
     }
-    try {
-      const parsed = JSON.parse(raw);
-      lastParsed = parsed;
-      lastFormatted = JSON.stringify(parsed, null, 2);
-      output.className = '';
-      renderOutput();
-      const size = new Blob([raw]).size;
-      const stats = computeStats(parsed);
-      setStatus('Valid JSON · ' + size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
-      addToHistory(sourceName, raw, lastFormatted);
-    } catch (err) {
-      lastParsed = undefined;
-      lastFormatted = '';
-      output.className = 'empty';
-      output.textContent = 'Could not parse JSON.';
-      setStatus('Invalid JSON — ' + err.message, false);
-    }
+    const { value: parsed, method } = attemptJSONify(raw);
+    lastParsed = parsed;
+    lastFormatted = JSON.stringify(parsed, null, 2);
+    output.className = '';
+    renderOutput();
+    const size = new Blob([raw]).size;
+    const stats = computeStats(parsed);
+    setStatus(methodStatus(method) + ' · ' + size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
+    addToHistory(sourceName, raw, lastFormatted);
   }
 
   function minifyJSON() {
     const raw = input.value;
     hidePathBar();
     if (!raw.trim()) {
-      setStatus('Nothing to minify — paste or open some JSON first.', false);
+      setStatus('Nothing to minify — paste or open some text first.', false);
       return;
     }
-    try {
-      const parsed = JSON.parse(raw);
-      lastParsed = parsed;
-      const minified = JSON.stringify(parsed);
-      lastFormatted = JSON.stringify(parsed, null, 2);
-      input.value = minified;
-      output.className = '';
-      renderOutput();
-      const stats = computeStats(parsed);
-      setStatus('Minified · ' + new Blob([minified]).size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
-      addToHistory(null, raw, lastFormatted);
-    } catch (err) {
-      setStatus('Invalid JSON — ' + err.message, false);
-    }
+    const { value: parsed, method } = attemptJSONify(raw);
+    lastParsed = parsed;
+    const minified = JSON.stringify(parsed);
+    lastFormatted = JSON.stringify(parsed, null, 2);
+    input.value = minified;
+    output.className = '';
+    renderOutput();
+    const stats = computeStats(parsed);
+    setStatus(methodStatus(method) + ' · Minified · ' + new Blob([minified]).size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
+    addToHistory(null, raw, lastFormatted);
   }
 
   // ---------- Rendering: tree + plain ----------
