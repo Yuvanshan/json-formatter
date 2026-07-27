@@ -224,6 +224,20 @@
     align-items: center;
   }
 
+  .panel-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .input-count {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text-faint);
+    font-size: 11px;
+  }
+
   textarea#input {
     flex: 1;
     border: none;
@@ -332,8 +346,8 @@
     user-select: none;
   }
   .collapsed > ul { display: none; }
-  .count-badge { color: var(--text-faint); font-style: italic; cursor: pointer; }
-  .count-badge:hover { text-decoration: underline; }
+  .node-punct.path-trigger { cursor: pointer; }
+  .node-punct.path-trigger:hover { text-decoration: underline; }
 
   li.leaf-row, li.node {
     border-radius: 3px;
@@ -484,7 +498,13 @@
 
 <main>
   <section class="panel editor-panel">
-    <div class="panel-header">Input</div>
+    <div class="panel-header">
+      <span>Input</span>
+      <div class="panel-header-actions">
+        <span class="input-count" id="inputCount"></span>
+        <button class="btn-sm" id="pasteBtn" title="Paste from clipboard">📋 Paste</button>
+      </div>
+    </div>
     <textarea id="input" placeholder="Paste JSON, JS-style objects, key: value text, or any text — it will be converted to JSON…" spellcheck="false"></textarea>
     <div id="status">Nothing formatted yet.</div>
   </section>
@@ -492,9 +512,12 @@
   <section class="panel result-panel">
     <div class="panel-header">
       <span>Result</span>
-      <div class="view-toggle">
-        <button id="treeViewBtn" class="active">Tree</button>
-        <button id="plainViewBtn">Plain</button>
+      <div class="panel-header-actions">
+        <button class="btn-sm" id="resultCopyBtn" title="Copy formatted JSON">📋 Copy</button>
+        <div class="view-toggle">
+          <button id="treeViewBtn" class="active">Tree</button>
+          <button id="plainViewBtn">Plain</button>
+        </div>
       </div>
     </div>
 
@@ -539,6 +562,7 @@
   const searchCount = document.getElementById('searchCount');
   const pathBar = document.getElementById('pathBar');
   const pathText = document.getElementById('pathText');
+  const inputCount = document.getElementById('inputCount');
 
   let lastFormatted = '';
   let lastParsed = undefined;
@@ -600,6 +624,7 @@
   function loadHistoryEntry(entry) {
     hidePathBar();
     input.value = entry.content;
+    updateInputCount();
     lastFormatted = entry.formatted;
     try {
       lastParsed = JSON.parse(entry.formatted);
@@ -656,6 +681,7 @@
     const reader = new FileReader();
     reader.onload = () => {
       input.value = reader.result;
+      updateInputCount();
       // Importing a file only loads it into the editor; it does not count
       // as a user-initiated conversion, so it must not save history (FR-07).
       formatJSON(file.name, false);
@@ -685,6 +711,17 @@
     })(value, 0);
     return { keys, depth: maxDepth };
   }
+
+  function updateInputCount() {
+    const text = input.value;
+    if (!text) {
+      inputCount.textContent = '';
+      return;
+    }
+    const lines = text.split(/\r?\n/).length;
+    inputCount.textContent = text.length.toLocaleString() + ' chars · ' + lines.toLocaleString() + ' lines';
+  }
+  input.addEventListener('input', updateInputCount);
 
   function hidePathBar() {
     pathBar.classList.remove('show');
@@ -1043,6 +1080,7 @@
     const minified = JSON.stringify(parsed);
     lastFormatted = JSON.stringify(parsed, null, 2);
     input.value = minified;
+    updateInputCount();
     output.className = '';
     renderOutput();
     const stats = computeStats(parsed);
@@ -1152,14 +1190,10 @@
       });
 
       const openPunct = document.createElement('span');
-      openPunct.className = 'node-punct';
+      openPunct.className = 'node-punct path-trigger';
       openPunct.textContent = open;
-
-      const badge = document.createElement('span');
-      badge.className = 'count-badge';
-      badge.textContent = ' // ' + keys.length + (isArray ? (keys.length === 1 ? ' item' : ' items') : (keys.length === 1 ? ' key' : ' keys'));
-      badge.title = 'Click to show path';
-      badge.addEventListener('click', (e) => {
+      openPunct.title = 'Click to show path';
+      openPunct.addEventListener('click', (e) => {
         e.stopPropagation();
         showPath(path, li);
       });
@@ -1212,7 +1246,6 @@
 
       li.appendChild(toggle);
       li.appendChild(openPunct);
-      li.appendChild(badge);
       li.appendChild(ul);
       li.appendChild(closePunct);
       container.appendChild(li);
@@ -1332,7 +1365,19 @@
   document.getElementById('formatBtn').addEventListener('click', () => formatJSON());
   document.getElementById('minifyBtn').addEventListener('click', minifyJSON);
 
-  document.getElementById('copyBtn').addEventListener('click', async () => {
+  // Briefly swaps a button's label to a checkmark to confirm an action landed.
+  function flashButton(button, label) {
+    if (!button) return;
+    const original = button.innerHTML;
+    button.textContent = label;
+    button.disabled = true;
+    setTimeout(() => {
+      button.innerHTML = original;
+      button.disabled = false;
+    }, 1200);
+  }
+
+  async function copyFormattedJSON(button) {
     if (!lastFormatted) {
       setStatus('Nothing to copy yet — format some JSON first.', false);
       return;
@@ -1340,8 +1385,28 @@
     try {
       await navigator.clipboard.writeText(lastFormatted);
       setStatus('Copied formatted JSON to clipboard.', true);
+      flashButton(button, '✅ Copied');
     } catch (e) {
       setStatus('Could not copy — copy manually from the result panel.', false);
+    }
+  }
+
+  document.getElementById('copyBtn').addEventListener('click', (e) => copyFormattedJSON(e.currentTarget));
+  document.getElementById('resultCopyBtn').addEventListener('click', (e) => copyFormattedJSON(e.currentTarget));
+
+  document.getElementById('pasteBtn').addEventListener('click', async (e) => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setStatus('Clipboard is empty.', false);
+        return;
+      }
+      input.value = text;
+      updateInputCount();
+      formatJSON();
+      flashButton(e.currentTarget, '✅ Pasted');
+    } catch (err) {
+      setStatus('Could not read clipboard — paste manually with Cmd/Ctrl+V.', false);
     }
   });
 
@@ -1363,6 +1428,7 @@
 
   document.getElementById('clearBtn').addEventListener('click', () => {
     input.value = '';
+    updateInputCount();
     output.className = 'empty';
     output.textContent = 'Formatted or opened JSON will appear here.';
     lastFormatted = '';
@@ -1389,6 +1455,7 @@
   });
 
   renderHistory();
+  updateInputCount();
 
   // ---------- Theme toggle ----------
   const themeToggle = document.getElementById('themeToggle');
