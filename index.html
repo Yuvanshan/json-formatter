@@ -92,6 +92,12 @@
 
   * { box-sizing: border-box; }
 
+  /* Smooth color fade when toggling light/dark, instead of an instant snap. */
+  body, header, .panel, .panel-header, .history-item, #output, textarea#input,
+  #status, .search-row, .path-bar, #searchInput, #historyList {
+    transition: background-color .2s ease, color .2s ease, border-color .2s ease;
+  }
+
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -261,6 +267,48 @@
   #status.ok { color: var(--status-ok); }
   #status.err { color: var(--status-err); }
 
+  @keyframes statusPulse {
+    0% { opacity: .25; }
+    100% { opacity: 1; }
+  }
+  #status.status-pulse { animation: statusPulse .3s ease; }
+
+  .status-undo {
+    margin-left: 8px;
+    padding: 2px 8px;
+    font-size: 11px;
+  }
+
+  /* Drag-and-drop file import */
+  .editor-panel {
+    position: relative;
+  }
+  .editor-panel.drag-over {
+    outline: 2px dashed var(--primary-bg);
+    outline-offset: -2px;
+  }
+  .editor-panel.drag-over textarea#input {
+    background: var(--active-bg);
+  }
+  .drop-hint {
+    display: none;
+    position: absolute;
+    inset: 0;
+    top: 37px;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-bg);
+    background: var(--active-bg);
+    opacity: .92;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .editor-panel.drag-over .drop-hint {
+    display: flex;
+  }
+
   /* Search row */
   .search-row {
     display: flex;
@@ -318,6 +366,12 @@
     font-size: 13px;
   }
 
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .output-animate { animation: fadeSlideIn .22s ease; }
+
   .view-toggle {
     display: flex;
     gap: 4px;
@@ -345,19 +399,32 @@
     color: var(--node-punct);
     user-select: none;
   }
-  .collapsed > ul { display: none; }
+  .tree ul {
+    overflow: hidden;
+    transition: max-height .22s ease, opacity .18s ease;
+  }
   .node-punct.path-trigger { cursor: pointer; }
   .node-punct.path-trigger:hover { text-decoration: underline; }
 
   li.leaf-row, li.node {
     border-radius: 3px;
     cursor: pointer;
+    transition: background-color .3s ease;
   }
 
   .search-match { background: var(--search-match-bg); border-radius: 3px; }
-  .search-match.search-current { background: var(--search-current-bg); }
+  .search-match.search-current {
+    background: var(--search-current-bg);
+    animation: matchPulse .5s ease-out;
+  }
+
+  @keyframes matchPulse {
+    0% { box-shadow: 0 0 0 0 rgba(217, 119, 87, .55); }
+    100% { box-shadow: 0 0 0 6px rgba(217, 119, 87, 0); }
+  }
 
   .flash { background: var(--active-bg); border-radius: 3px; }
+  .copied-flash { background: var(--search-current-bg) !important; }
 
   /* Plain formatted text view */
   pre#plainOutput {
@@ -487,11 +554,11 @@
   <div class="toolbar">
     <label class="file-btn" for="fileInput">📂 Open file…</label>
     <input type="file" id="fileInput" accept="*/*">
-    <button id="formatBtn" class="primary">✨ Format</button>
-    <button id="minifyBtn">📦 Minify</button>
-    <button id="copyBtn">📋 Copy</button>
-    <button id="downloadBtn">⬇️ Download</button>
-    <button id="clearBtn">🗑️ Clear</button>
+    <button id="formatBtn" class="primary" title="Format (Cmd/Ctrl+Enter)">✨ Format</button>
+    <button id="minifyBtn" title="Minify — remove all whitespace">📦 Minify</button>
+    <button id="copyBtn" title="Copy formatted JSON to clipboard">📋 Copy</button>
+    <button id="downloadBtn" title="Download as formatted.json">⬇️ Download</button>
+    <button id="clearBtn" title="Clear input and result">🗑️ Clear</button>
     <button id="themeToggle" title="Toggle light/dark mode">🌙</button>
   </div>
 </header>
@@ -506,6 +573,7 @@
       </div>
     </div>
     <textarea id="input" placeholder="Paste JSON, JS-style objects, key: value text, or any text — it will be converted to JSON…" spellcheck="false"></textarea>
+    <div class="drop-hint">📂 Drop file to import</div>
     <div id="status">Nothing formatted yet.</div>
   </section>
 
@@ -675,8 +743,7 @@
   });
 
   // ---------- File open ----------
-  document.getElementById('fileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
+  function loadFile(file) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
@@ -687,13 +754,43 @@
       formatJSON(file.name, false);
     };
     reader.readAsText(file);
+  }
+
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    loadFile(e.target.files[0]);
     e.target.value = '';
+  });
+
+  // ---------- Drag-and-drop file import ----------
+  const editorPanel = document.querySelector('.editor-panel');
+  let dragDepth = 0;
+
+  editorPanel.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragDepth++;
+    editorPanel.classList.add('drag-over');
+  });
+  editorPanel.addEventListener('dragover', (e) => e.preventDefault());
+  editorPanel.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) editorPanel.classList.remove('drag-over');
+  });
+  editorPanel.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    editorPanel.classList.remove('drag-over');
+    loadFile(e.dataTransfer.files && e.dataTransfer.files[0]);
   });
 
   // ---------- Format / Minify ----------
   function setStatus(msg, ok) {
-    status.textContent = msg;
+    status.textContent = (ok ? '✓ ' : '✕ ') + msg;
     status.className = ok ? 'ok' : 'err';
+    // Restart the pulse animation even if the class is already present.
+    status.classList.remove('status-pulse');
+    void status.offsetWidth;
+    status.classList.add('status-pulse');
   }
 
   function computeStats(value) {
@@ -1093,12 +1190,12 @@
     if (lastParsed === undefined) return;
     if (currentView === 'tree') {
       searchRow.style.display = 'flex';
-      output.innerHTML = '<div class="tree"></div>';
+      output.innerHTML = '<div class="tree output-animate"></div>';
       output.querySelector('.tree').appendChild(buildTree(lastParsed));
       if (searchInput.value.trim()) performSearch(searchInput.value);
     } else {
       searchRow.style.display = 'none';
-      output.innerHTML = '<pre id="plainOutput"></pre>';
+      output.innerHTML = '<pre id="plainOutput" class="output-animate"></pre>';
       document.getElementById('plainOutput').textContent = lastFormatted;
     }
   }
@@ -1116,13 +1213,52 @@
     }
   }
 
+  // Single place that (un)collapses a tree node, animated or not. Used by
+  // the per-node toggle click, search's auto-expand-to-match, and the
+  // Expand/Collapse all buttons, so every code path stays in sync — the
+  // `collapsed` class alone no longer hides anything; the actual hiding is
+  // this function driving max-height/opacity directly.
+  function setNodeCollapsed(li, collapsed, animate) {
+    const ul = li.querySelector(':scope > ul');
+    const toggle = li.querySelector(':scope > .toggle');
+    if (!ul) return;
+    if (collapsed) {
+      li.classList.add('collapsed');
+      if (toggle) toggle.textContent = '▸';
+      if (animate) {
+        ul.style.maxHeight = ul.scrollHeight + 'px';
+        ul.style.opacity = '1';
+        requestAnimationFrame(() => {
+          ul.style.maxHeight = '0px';
+          ul.style.opacity = '0';
+        });
+      } else {
+        ul.style.maxHeight = '0px';
+        ul.style.opacity = '0';
+      }
+    } else {
+      li.classList.remove('collapsed');
+      if (toggle) toggle.textContent = '▾';
+      if (animate) {
+        ul.style.maxHeight = ul.scrollHeight + 'px';
+        ul.style.opacity = '1';
+        ul.addEventListener('transitionend', function onDone(ev) {
+          if (ev.propertyName !== 'max-height') return;
+          ul.style.maxHeight = '';
+          ul.removeEventListener('transitionend', onDone);
+        });
+      } else {
+        ul.style.maxHeight = '';
+        ul.style.opacity = '1';
+      }
+    }
+  }
+
   function expandAncestors(el) {
     let p = el.parentElement;
     while (p) {
       if (p.classList && p.classList.contains('collapsed')) {
-        p.classList.remove('collapsed');
-        const t = p.querySelector(':scope > .toggle');
-        if (t) t.textContent = '▾';
+        setNodeCollapsed(p, false, true);
       }
       p = p.parentElement;
     }
@@ -1185,8 +1321,7 @@
       toggle.textContent = '▾';
       toggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        const isCollapsed = li.classList.toggle('collapsed');
-        toggle.textContent = isCollapsed ? '▸' : '▾';
+        setNodeCollapsed(li, !li.classList.contains('collapsed'), true);
       });
 
       const openPunct = document.createElement('span');
@@ -1233,9 +1368,15 @@
           childLi.appendChild(comma);
         }
 
+        childLi.title = 'Click to show path · Double-click to copy this value';
         childLi.addEventListener('click', (e) => {
           e.stopPropagation();
           showPath(childPath, childLi);
+        });
+        childLi.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          const text = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+          copyValueToClipboard(text, childLi);
         });
 
         const valueText = isScalar ? (val === null ? 'null' : (typeof val === 'string' ? val : String(val))) : '';
@@ -1325,10 +1466,10 @@
 
   // ---------- Expand / Collapse all ----------
   function setAllCollapsed(collapsed) {
+    // Bulk operation — skip the per-node animation so expanding/collapsing
+    // a large tree doesn't fire dozens of simultaneous transitions at once.
     output.querySelectorAll('.node').forEach((li) => {
-      li.classList.toggle('collapsed', collapsed);
-      const t = li.querySelector(':scope > .toggle');
-      if (t) t.textContent = collapsed ? '▸' : '▾';
+      setNodeCollapsed(li, collapsed, false);
     });
   }
   document.getElementById('expandAllBtn').addEventListener('click', () => setAllCollapsed(false));
@@ -1391,6 +1532,20 @@
     }
   }
 
+  // Copies a single tree value (scalar or nested subtree) to the clipboard,
+  // flashing the row so it's clear exactly what got copied.
+  async function copyValueToClipboard(text, el) {
+    try {
+      await navigator.clipboard.writeText(text);
+      el.classList.add('copied-flash');
+      setTimeout(() => el.classList.remove('copied-flash'), 450);
+      const preview = text.length > 60 ? text.slice(0, 60) + '…' : text;
+      setStatus('Copied value: ' + preview, true);
+    } catch (e) {
+      setStatus('Could not copy value.', false);
+    }
+  }
+
   document.getElementById('copyBtn').addEventListener('click', (e) => copyFormattedJSON(e.currentTarget));
   document.getElementById('resultCopyBtn').addEventListener('click', (e) => copyFormattedJSON(e.currentTarget));
 
@@ -1426,7 +1581,28 @@
     URL.revokeObjectURL(url);
   });
 
+  // Shows a status message with an inline "Undo" action, for operations
+  // (like Clear) that are easy to trigger by accident.
+  function setUndoableStatus(msg, restore) {
+    status.innerHTML = '';
+    status.className = 'ok';
+    status.classList.remove('status-pulse');
+    void status.offsetWidth;
+    status.classList.add('status-pulse');
+    const label = document.createElement('span');
+    label.textContent = '✓ ' + msg;
+    status.appendChild(label);
+    const undoBtn = document.createElement('button');
+    undoBtn.className = 'btn-sm status-undo';
+    undoBtn.textContent = '↩ Undo';
+    undoBtn.addEventListener('click', restore);
+    status.appendChild(undoBtn);
+  }
+
   document.getElementById('clearBtn').addEventListener('click', () => {
+    const snapshot = { value: input.value, formatted: lastFormatted, parsed: lastParsed };
+    const hadContent = snapshot.value.trim().length > 0;
+
     input.value = '';
     updateInputCount();
     output.className = 'empty';
@@ -1438,7 +1614,22 @@
     currentMatchIndex = -1;
     updateSearchCount();
     hidePathBar();
-    setStatus('Cleared.', true);
+
+    if (hadContent) {
+      setUndoableStatus('Cleared.', () => {
+        input.value = snapshot.value;
+        updateInputCount();
+        lastFormatted = snapshot.formatted;
+        lastParsed = snapshot.parsed;
+        if (lastParsed !== undefined) {
+          output.className = '';
+          renderOutput();
+        }
+        setStatus('Restored.', true);
+      });
+    } else {
+      setStatus('Cleared.', true);
+    }
   });
 
   // Keyboard shortcut: Cmd/Ctrl+Enter to format
