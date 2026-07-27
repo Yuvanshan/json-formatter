@@ -625,10 +625,113 @@
     pathText.textContent = '';
   }
 
+  // Parses "struct dump" text: nested { key: value, ... } / [ ... ] where
+  // keys and string values are NOT quoted (typical of Go %+v-style struct
+  // prints or backend debug logs). Handles empty values and values that
+  // themselves contain commas (e.g. "29 Castle Ln, Colombo, Sri Lanka") by
+  // only treating a comma as a field separator when it's followed by what
+  // looks like the next "identifier:" key. Returns null if the text doesn't
+  // fully parse as this format (leftover/malformed input), so callers can
+  // fall back to something else instead of trusting a partial parse.
+  function tryParseStructDump(raw) {
+    const s = raw.trim();
+    if (!s || (s[0] !== '{' && s[0] !== '[')) return null;
+    let i = 0;
+    let failed = false;
+
+    function skipWs() { while (i < s.length && /\s/.test(s[i])) i++; }
+    function isKeyStart(ch) { return /[A-Za-z_$]/.test(ch); }
+
+    function looksLikeKeyAhead(pos) {
+      let j = pos;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      if (j >= s.length || !isKeyStart(s[j])) return false;
+      while (j < s.length && /[A-Za-z0-9_$]/.test(s[j])) j++;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      return s[j] === ':';
+    }
+
+    function coerceScalar(text) {
+      const t = text.trim();
+      if (t === '') return '';
+      if (/^(true|false)$/i.test(t)) return t.toLowerCase() === 'true';
+      if (/^null$/i.test(t)) return null;
+      if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) return Number(t);
+      return t;
+    }
+
+    function parseValue(inArray) {
+      skipWs();
+      if (i >= s.length) return '';
+      if (s[i] === '{') return parseObject();
+      if (s[i] === '[') return parseArray();
+      return parseScalar(inArray);
+    }
+
+    function parseScalar(inArray) {
+      const start = i;
+      while (i < s.length) {
+        const ch = s[i];
+        if (ch === '}' || ch === ']') break;
+        if (ch === ',') {
+          if (inArray || looksLikeKeyAhead(i + 1)) break;
+          i++;
+          continue;
+        }
+        i++;
+      }
+      return coerceScalar(s.slice(start, i));
+    }
+
+    function parseObject() {
+      i++; // consume {
+      const obj = {};
+      skipWs();
+      if (s[i] === '}') { i++; return obj; }
+      while (i < s.length) {
+        skipWs();
+        const keyStart = i;
+        while (i < s.length && s[i] !== ':' && s[i] !== ',' && s[i] !== '}') i++;
+        const key = s.slice(keyStart, i).trim();
+        if (s[i] !== ':' || !key) { failed = true; return obj; }
+        i++; // consume ':'
+        obj[key] = parseValue(false);
+        skipWs();
+        if (s[i] === ',') { i++; continue; }
+        if (s[i] === '}') { i++; break; }
+        failed = true;
+        break;
+      }
+      return obj;
+    }
+
+    function parseArray() {
+      i++; // consume [
+      const arr = [];
+      skipWs();
+      if (s[i] === ']') { i++; return arr; }
+      while (i < s.length) {
+        arr.push(parseValue(true));
+        skipWs();
+        if (s[i] === ',') { i++; continue; }
+        if (s[i] === ']') { i++; break; }
+        failed = true;
+        break;
+      }
+      return arr;
+    }
+
+    const value = parseValue(false);
+    skipWs();
+    if (failed || i < s.length) return null;
+    return value;
+  }
+
   // Attempts, in order: strict JSON, lenient JS-object-style repair (quotes/
-  // commas/comments), JSONL (one JSON value per line), "key: value" text, and
-  // finally wraps whatever is left as a plain JSON string. Always returns a
-  // { value, method } pair — never throws — so any pasted text becomes JSON.
+  // commas/comments), unquoted "struct dump" repair, JSONL (one JSON value
+  // per line), "key: value" text, and finally wraps whatever is left as a
+  // plain JSON object. Always returns a { value, method } pair — never
+  // throws — so any pasted text becomes JSON.
   function attemptJSONify(raw) {
     try {
       return { value: JSON.parse(raw), method: 'valid' };
@@ -644,6 +747,11 @@
       text = text.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
       return { value: JSON.parse(text), method: 'repaired' };
     } catch (e) { /* fall through */ }
+
+    const structDump = tryParseStructDump(raw);
+    if (structDump !== null) {
+      return { value: structDump, method: 'structdump' };
+    }
 
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length > 1) {
@@ -689,6 +797,7 @@
       case 'valid': return 'Valid JSON';
       case 'repaired': return 'Auto-fixed JSON (quotes/commas/comments)';
       case 'jsonl': return 'Converted line-delimited JSON to an array';
+      case 'structdump': return 'Converted unquoted struct dump to JSON';
       case 'keyvalue': return 'Converted key/value text to JSON';
       default: return 'Not JSON — wrapped plain text into a JSON object';
     }
