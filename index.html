@@ -345,6 +345,14 @@
 
   .flash { background: var(--active-bg); border-radius: 3px; }
 
+  pre.parse-error {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--status-err);
+  }
+
   /* Plain formatted text view */
   pre#plainOutput {
     margin: 0;
@@ -395,6 +403,13 @@
     border-color: var(--history-hover-border);
   }
 
+  .history-item .h-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
   .history-item .h-title {
     font-size: 12.5px;
     font-weight: 600;
@@ -403,11 +418,29 @@
     text-overflow: ellipsis;
   }
 
+  .history-item .h-delete {
+    background: none;
+    border: none;
+    font-size: 11px;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .history-item .h-delete:hover { color: var(--status-err); }
+
   .history-item .h-meta {
     font-size: 11px;
     color: var(--text-faint);
     display: flex;
     justify-content: space-between;
+    gap: 6px;
+  }
+
+  .history-item .h-type {
+    font-weight: 600;
   }
 
   .history-item .h-preview {
@@ -535,19 +568,56 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
   }
 
-  function addToHistory(name, rawText, formattedText) {
+  function methodTypeLabel(method) {
+    switch (method) {
+      case 'valid': return 'JSON';
+      case 'repaired': case 'structdump': case 'jsonl': return 'JSON-like';
+      case 'keyvalue': return 'Key-Value';
+      default: return 'Text';
+    }
+  }
+
+  // Records a successful, user-initiated conversion. Stores the full
+  // formatted output (not just a preview) so opening this entry later can
+  // restore the exact result without re-running the parser (FR-05).
+  function addToHistory(name, rawText, formattedText, type) {
     const list = loadHistory();
     const entry = {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       name: name || 'Pasted JSON',
       time: new Date().toISOString(),
+      type: type || 'JSON',
       preview: formattedText.replace(/\s+/g, ' ').slice(0, 120),
-      content: rawText
+      content: rawText,
+      formatted: formattedText
     };
     list.unshift(entry);
     while (list.length > MAX_HISTORY) list.pop();
     saveHistory(list);
     renderHistory();
+  }
+
+  function deleteHistoryEntry(id) {
+    saveHistory(loadHistory().filter((e) => e.id !== id));
+    renderHistory();
+  }
+
+  // Loads a history entry as a read-only view: restores the original input
+  // and the exact previously-saved output, without re-parsing and without
+  // creating a new history entry (FR-05/FR-06).
+  function loadHistoryEntry(entry) {
+    hidePathBar();
+    input.value = entry.content;
+    lastFormatted = entry.formatted;
+    try {
+      lastParsed = JSON.parse(entry.formatted);
+    } catch (e) {
+      lastParsed = entry.formatted;
+    }
+    output.className = '';
+    renderOutput();
+    const stats = computeStats(lastParsed);
+    setStatus('Loaded from history (' + entry.type + ') · ' + stats.keys + ' keys · depth ' + stats.depth, true);
   }
 
   function renderHistory() {
@@ -564,16 +634,18 @@
       const timeStr = time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
         time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
       div.innerHTML =
-        '<div class="h-title"></div>' +
-        '<div class="h-meta"><span></span></div>' +
+        '<div class="h-row"><div class="h-title"></div><button class="h-delete" title="Delete this entry">✕</button></div>' +
+        '<div class="h-meta"><span class="h-type"></span><span class="h-time"></span></div>' +
         '<div class="h-preview"></div>';
       div.querySelector('.h-title').textContent = entry.name;
-      div.querySelector('.h-meta span').textContent = timeStr;
+      div.querySelector('.h-type').textContent = entry.type || 'JSON';
+      div.querySelector('.h-time').textContent = timeStr;
       div.querySelector('.h-preview').textContent = entry.preview;
-      div.addEventListener('click', () => {
-        input.value = entry.content;
-        formatJSON();
+      div.querySelector('.h-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteHistoryEntry(entry.id);
       });
+      div.addEventListener('click', () => loadHistoryEntry(entry));
       historyList.appendChild(div);
     });
   }
@@ -592,7 +664,9 @@
     const reader = new FileReader();
     reader.onload = () => {
       input.value = reader.result;
-      formatJSON(file.name);
+      // Importing a file only loads it into the editor; it does not count
+      // as a user-initiated conversion, so it must not save history (FR-07).
+      formatJSON(file.name, false);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -630,12 +704,14 @@
   // prints or backend debug logs). Handles empty values and values that
   // themselves contain commas (e.g. "29 Castle Ln, Colombo, Sri Lanka") by
   // only treating a comma as a field separator when it's followed by what
-  // looks like the next "identifier:" key. Returns null if the text doesn't
-  // fully parse as this format (leftover/malformed input), so callers can
-  // fall back to something else instead of trusting a partial parse.
-  function tryParseStructDump(raw) {
+  // looks like the next "identifier:" key. Returns { ok: false, index } with
+  // the character offset where parsing gave up if the text doesn't fully
+  // parse as this format, so callers can either fall back to something else
+  // or surface a precise error location.
+  function parseStructDump(raw) {
+    const leadingWs = (raw.match(/^\s*/) || [''])[0].length;
     const s = raw.trim();
-    if (!s || (s[0] !== '{' && s[0] !== '[')) return null;
+    if (!s || (s[0] !== '{' && s[0] !== '[')) return { ok: false, index: leadingWs };
     let i = 0;
     let failed = false;
 
@@ -723,34 +799,71 @@
 
     const value = parseValue(false);
     skipWs();
-    if (failed || i < s.length) return null;
-    return value;
+    if (failed || i < s.length) return { ok: false, index: leadingWs + i };
+    return { ok: true, value: value };
+  }
+
+  function tryParseStructDump(raw) {
+    const r = parseStructDump(raw);
+    return r.ok ? r.value : null;
+  }
+
+  function repairJsSyntax(text) {
+    text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+    text = text.replace(/(^|[^:])\/\/.*$/gm, '$1');
+    text = text.replace(/,(\s*[}\]])/g, '$1');
+    text = text.replace(/'((?:\\.|[^'\\])*)'/g, (m, p1) =>
+      '"' + p1.replace(/\\'/g, "'").replace(/"/g, '\\"') + '"');
+    text = text.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
+    return text;
+  }
+
+  // Builds a { message, line, col, snippet, caretOffset } description of
+  // where parsing broke down, for surfacing a precise, human-readable error
+  // instead of guessing at malformed object/array syntax.
+  function buildErrorInfo(raw, index) {
+    const idx = Math.max(0, Math.min(index, raw.length));
+    const upto = raw.slice(0, idx);
+    const line = (upto.match(/\n/g) || []).length + 1;
+    const col = idx - upto.lastIndexOf('\n');
+    const windowStart = Math.max(0, idx - 40);
+    const windowEnd = Math.min(raw.length, idx + 40);
+    return {
+      line: line,
+      col: col,
+      snippet: raw.slice(windowStart, windowEnd),
+      caretOffset: idx - windowStart
+    };
   }
 
   // Attempts, in order: strict JSON, lenient JS-object-style repair (quotes/
-  // commas/comments), unquoted "struct dump" repair, JSONL (one JSON value
-  // per line), "key: value" text, and finally wraps whatever is left as a
-  // plain JSON object. Always returns a { value, method } pair — never
-  // throws — so any pasted text becomes JSON.
+  // commas/comments), unquoted "struct dump" repair (nested, for input that
+  // already looks like an object/array). If the input looks like it's meant
+  // to be an object/array but none of those recover it, this is treated as
+  // unrecoverable and reported as an error (method 'error') rather than
+  // guessed at further. Otherwise — free-form text with no braces — tries
+  // wrapping bare "key: value" pairs into an object, then JSONL, then loose
+  // per-line key/value text, and finally wraps whatever is left as a plain
+  // JSON object. Always returns a { value, method } pair — never throws.
   function attemptJSONify(raw) {
+    const trimmed = raw.trim();
+    const looksBraced = trimmed.length > 0 && (trimmed[0] === '{' || trimmed[0] === '[');
+
     try {
       return { value: JSON.parse(raw), method: 'valid' };
     } catch (e) { /* fall through */ }
 
     try {
-      let text = raw;
-      text = text.replace(/\/\*[\s\S]*?\*\//g, '');
-      text = text.replace(/(^|[^:])\/\/.*$/gm, '$1');
-      text = text.replace(/,(\s*[}\]])/g, '$1');
-      text = text.replace(/'((?:\\.|[^'\\])*)'/g, (m, p1) =>
-        '"' + p1.replace(/\\'/g, "'").replace(/"/g, '\\"') + '"');
-      text = text.replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":');
-      return { value: JSON.parse(text), method: 'repaired' };
+      return { value: JSON.parse(repairJsSyntax(raw)), method: 'repaired' };
     } catch (e) { /* fall through */ }
 
-    const structDump = tryParseStructDump(raw);
-    if (structDump !== null) {
-      return { value: structDump, method: 'structdump' };
+    const structDump = parseStructDump(raw);
+    if (structDump.ok) {
+      return { value: structDump.value, method: 'structdump' };
+    }
+
+    if (looksBraced) {
+      return { value: null, method: 'error', error: buildErrorInfo(raw, structDump.index) };
     }
 
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -759,6 +872,26 @@
         const values = lines.map((l) => JSON.parse(l));
         return { value: values, method: 'jsonl' };
       } catch (e) { /* fall through */ }
+    }
+
+    // Bare "key: value, key2: value2" pairs on a single line with no outer
+    // braces — wrap into an object and retry both repair strategies. Only
+    // for single-line input: multi-line bare pairs are newline-separated
+    // (no commas between fields), which the per-line splitter below already
+    // handles correctly.
+    if (lines.length === 1 && raw.indexOf(':') !== -1) {
+      const wrapped = '{' + raw + '}';
+      try {
+        return { value: JSON.parse(repairJsSyntax(wrapped)), method: 'keyvalue' };
+      } catch (e) { /* fall through */ }
+
+      const wrappedDump = parseStructDump(wrapped);
+      const looksLikeRealKeys = wrappedDump.ok && Object.keys(wrappedDump.value).every(
+        (k) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)
+      );
+      if (looksLikeRealKeys) {
+        return { value: wrappedDump.value, method: 'keyvalue' };
+      }
     }
 
     if (lines.length > 0) {
@@ -789,7 +922,7 @@
     if (lines.length > 1) {
       return { value: { lines: lines }, method: 'text' };
     }
-    return { value: { text: raw.trim() }, method: 'text' };
+    return { value: { text: trimmed }, method: 'text' };
   }
 
   function methodStatus(method) {
@@ -803,7 +936,24 @@
     }
   }
 
-  function formatJSON(sourceName) {
+  function showParseError(raw, error) {
+    hidePathBar();
+    lastFormatted = '';
+    lastParsed = undefined;
+    output.className = 'empty error';
+    output.innerHTML = '';
+    const pre = document.createElement('pre');
+    pre.className = 'parse-error';
+    pre.textContent =
+      'Could not parse this as JSON — unexpected content at line ' + error.line + ', column ' + error.col + '.\n\n' +
+      error.snippet + '\n' +
+      ' '.repeat(error.caretOffset) + '^';
+    output.appendChild(pre);
+    setStatus('Invalid syntax — line ' + error.line + ', column ' + error.col + '.', false);
+  }
+
+  function formatJSON(sourceName, save) {
+    if (save === undefined) save = true;
     const raw = input.value;
     hidePathBar();
     if (!raw.trim()) {
@@ -814,7 +964,11 @@
       lastParsed = undefined;
       return;
     }
-    const { value: parsed, method } = attemptJSONify(raw);
+    const { value: parsed, method, error } = attemptJSONify(raw);
+    if (method === 'error') {
+      showParseError(raw, error);
+      return;
+    }
     lastParsed = parsed;
     lastFormatted = JSON.stringify(parsed, null, 2);
     output.className = '';
@@ -822,7 +976,9 @@
     const size = new Blob([raw]).size;
     const stats = computeStats(parsed);
     setStatus(methodStatus(method) + ' · ' + size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
-    addToHistory(sourceName, raw, lastFormatted);
+    if (save) {
+      addToHistory(sourceName, raw, lastFormatted, methodTypeLabel(method));
+    }
   }
 
   function minifyJSON() {
@@ -832,7 +988,11 @@
       setStatus('Nothing to minify — paste or open some text first.', false);
       return;
     }
-    const { value: parsed, method } = attemptJSONify(raw);
+    const { value: parsed, method, error } = attemptJSONify(raw);
+    if (method === 'error') {
+      showParseError(raw, error);
+      return;
+    }
     lastParsed = parsed;
     const minified = JSON.stringify(parsed);
     lastFormatted = JSON.stringify(parsed, null, 2);
@@ -841,7 +1001,7 @@
     renderOutput();
     const stats = computeStats(parsed);
     setStatus(methodStatus(method) + ' · Minified · ' + new Blob([minified]).size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
-    addToHistory(null, raw, lastFormatted);
+    addToHistory(null, raw, lastFormatted, methodTypeLabel(method));
   }
 
   // ---------- Rendering: tree + plain ----------
