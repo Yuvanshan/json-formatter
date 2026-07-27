@@ -678,7 +678,10 @@
       }
     }
 
-    return { value: raw, method: 'text' };
+    if (lines.length > 1) {
+      return { value: { lines: lines }, method: 'text' };
+    }
+    return { value: { text: raw.trim() }, method: 'text' };
   }
 
   function methodStatus(method) {
@@ -687,7 +690,7 @@
       case 'repaired': return 'Auto-fixed JSON (quotes/commas/comments)';
       case 'jsonl': return 'Converted line-delimited JSON to an array';
       case 'keyvalue': return 'Converted key/value text to JSON';
-      default: return 'Not JSON — wrapped input as a JSON string';
+      default: return 'Not JSON — wrapped plain text into a JSON object';
     }
   }
 
