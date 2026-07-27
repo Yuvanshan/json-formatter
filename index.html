@@ -345,14 +345,6 @@
 
   .flash { background: var(--active-bg); border-radius: 3px; }
 
-  pre.parse-error {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: "SF Mono", Menlo, Consolas, monospace;
-    color: var(--status-err);
-  }
-
   /* Plain formatted text view */
   pre#plainOutput {
     margin: 0;
@@ -699,19 +691,15 @@
     pathText.textContent = '';
   }
 
-  // Parses "struct dump" text: nested { key: value, ... } / [ ... ] where
-  // keys and string values are NOT quoted (typical of Go %+v-style struct
-  // prints or backend debug logs). Handles empty values and values that
-  // themselves contain commas (e.g. "29 Castle Ln, Colombo, Sri Lanka") by
-  // only treating a comma as a field separator when it's followed by what
-  // looks like the next "identifier:" key. Returns { ok: false, index } with
-  // the character offset where parsing gave up if the text doesn't fully
-  // parse as this format, so callers can either fall back to something else
-  // or surface a precise error location.
-  function parseStructDump(raw) {
-    const leadingWs = (raw.match(/^\s*/) || [''])[0].length;
-    const s = raw.trim();
-    if (!s || (s[0] !== '{' && s[0] !== '[')) return { ok: false, index: leadingWs };
+  // Shared tokenizer for "struct dump" text: nested { key: value, ... } /
+  // [ ... ] where keys and string values are NOT quoted (typical of Go
+  // %+v-style struct prints or backend debug logs). Scalar values that
+  // themselves contain commas (e.g. "29 Castle Ln, Colombo, Sri Lanka") are
+  // handled by only treating a comma as a field separator when it's
+  // followed by what looks like the next "identifier:" key. Used both by
+  // the strict single-value parser and the lenient multi-chunk recovery
+  // parser below, sharing one mutable cursor over the string.
+  function createDumpTokenizer(s) {
     let i = 0;
     let failed = false;
 
@@ -797,15 +785,112 @@
       return arr;
     }
 
-    const value = parseValue(false);
-    skipWs();
-    if (failed || i < s.length) return { ok: false, index: leadingWs + i };
+    return {
+      parseValue: parseValue,
+      looksLikeKeyAhead: looksLikeKeyAhead,
+      skipWs: skipWs,
+      pos: function () { return i; },
+      setPos: function (p) { i = p; },
+      atEnd: function () { return i >= s.length; },
+      hasFailed: function () { return failed; },
+      clearFailed: function () { failed = false; }
+    };
+  }
+
+  // Strict single-value parse: the whole (trimmed) input must be exactly
+  // one well-formed object/array in this format. Returns { ok:false, index }
+  // pointing at the offset where parsing stalled if it doesn't fully
+  // consume the input, so callers can fall back to something more lenient.
+  function parseStructDump(raw) {
+    const leadingWs = (raw.match(/^\s*/) || [''])[0].length;
+    const s = raw.trim();
+    if (!s || (s[0] !== '{' && s[0] !== '[')) return { ok: false, index: leadingWs };
+    const tok = createDumpTokenizer(s);
+    const value = tok.parseValue(false);
+    tok.skipWs();
+    if (tok.hasFailed() || !tok.atEnd()) return { ok: false, index: leadingWs + tok.pos() };
     return { ok: true, value: value };
   }
 
   function tryParseStructDump(raw) {
     const r = parseStructDump(raw);
     return r.ok ? r.value : null;
+  }
+
+  // Best-effort recovery for input that doesn't fully parse as one clean
+  // struct dump — e.g. a paste that starts mid-structure (missing its own
+  // key name), is missing an outer wrapper, or has a stray unmatched
+  // bracket somewhere. Rather than giving up, this walks the text as a
+  // sequence of top-level pieces (each either "key: value" or a bare value
+  // with no key) and merges everything into one object: named pieces become
+  // fields, unnamed object pieces get spread into the result, and anything
+  // else gets a synthetic key. A stuck cursor (a character that isn't part
+  // of any recognizable piece) is skipped one character at a time so this
+  // always terminates and always returns *something*, never an error.
+  function parseLenientRoot(raw) {
+    const s = raw.trim();
+    if (!s) return {};
+    const tok = createDumpTokenizer(s);
+    const chunks = [];
+    let guard = 0;
+    const maxIterations = 20000;
+
+    while (!tok.atEnd() && guard++ < maxIterations) {
+      tok.skipWs();
+      if (tok.atEnd()) break;
+
+      let key = null;
+      if (tok.looksLikeKeyAhead(tok.pos())) {
+        let p = tok.pos();
+        const keyStart = p;
+        while (p < s.length && /[A-Za-z0-9_$]/.test(s[p])) p++;
+        key = s.slice(keyStart, p);
+        while (p < s.length && /\s/.test(s[p])) p++;
+        p++; // consume ':'
+        tok.setPos(p);
+      }
+
+      const posBefore = tok.pos();
+      const value = tok.parseValue(false);
+      tok.clearFailed();
+
+      if (tok.pos() === posBefore && key === null) {
+        // Stuck on a character that starts neither a key nor a value
+        // (e.g. a stray bracket) — skip past it and keep going.
+        tok.setPos(posBefore + 1);
+        continue;
+      }
+
+      chunks.push({ key: key, value: value });
+      tok.skipWs();
+      if (s[tok.pos()] === ',') { tok.setPos(tok.pos() + 1); continue; }
+      // No comma — if a new key clearly starts right here, keep going
+      // (handles newline-separated pairs with no commas at all).
+      if (tok.looksLikeKeyAhead(tok.pos())) continue;
+    }
+
+    if (!tok.atEnd()) {
+      const rest = s.slice(tok.pos()).trim();
+      if (rest) chunks.push({ key: null, value: rest });
+    }
+
+    if (chunks.length === 1 && chunks[0].key === null) {
+      return chunks[0].value;
+    }
+
+    const result = {};
+    let anonCount = 0;
+    chunks.forEach((c) => {
+      if (c.key) {
+        result[c.key] = c.value;
+      } else if (c.value !== null && typeof c.value === 'object' && !Array.isArray(c.value)) {
+        Object.assign(result, c.value);
+      } else {
+        anonCount++;
+        result['value' + (anonCount > 1 ? anonCount : '')] = c.value;
+      }
+    });
+    return result;
   }
 
   function repairJsSyntax(text) {
@@ -818,33 +903,17 @@
     return text;
   }
 
-  // Builds a { message, line, col, snippet, caretOffset } description of
-  // where parsing broke down, for surfacing a precise, human-readable error
-  // instead of guessing at malformed object/array syntax.
-  function buildErrorInfo(raw, index) {
-    const idx = Math.max(0, Math.min(index, raw.length));
-    const upto = raw.slice(0, idx);
-    const line = (upto.match(/\n/g) || []).length + 1;
-    const col = idx - upto.lastIndexOf('\n');
-    const windowStart = Math.max(0, idx - 40);
-    const windowEnd = Math.min(raw.length, idx + 40);
-    return {
-      line: line,
-      col: col,
-      snippet: raw.slice(windowStart, windowEnd),
-      caretOffset: idx - windowStart
-    };
-  }
-
   // Attempts, in order: strict JSON, lenient JS-object-style repair (quotes/
-  // commas/comments), unquoted "struct dump" repair (nested, for input that
-  // already looks like an object/array). If the input looks like it's meant
-  // to be an object/array but none of those recover it, this is treated as
-  // unrecoverable and reported as an error (method 'error') rather than
-  // guessed at further. Otherwise — free-form text with no braces — tries
-  // wrapping bare "key: value" pairs into an object, then JSONL, then loose
-  // per-line key/value text, and finally wraps whatever is left as a plain
-  // JSON object. Always returns a { value, method } pair — never throws.
+  // commas/comments), unquoted "struct dump" (nested, for input that's
+  // already one clean object/array). If the input looks like it's meant to
+  // be an object/array but isn't a single clean one (missing outer wrapper,
+  // pasted starting mid-structure, stray unmatched bracket, etc.), falls
+  // back to the lenient multi-chunk recovery parser rather than failing —
+  // this app never shows a parse error, it always produces something.
+  // Otherwise — free-form text with no braces — tries wrapping bare
+  // "key: value" pairs into an object, then JSONL, then loose per-line
+  // key/value text, and finally wraps whatever is left as a plain JSON
+  // object. Always returns a { value, method } pair — never throws.
   function attemptJSONify(raw) {
     const trimmed = raw.trim();
     const looksBraced = trimmed.length > 0 && (trimmed[0] === '{' || trimmed[0] === '[');
@@ -863,7 +932,7 @@
     }
 
     if (looksBraced) {
-      return { value: null, method: 'error', error: buildErrorInfo(raw, structDump.index) };
+      return { value: parseLenientRoot(raw), method: 'lenient' };
     }
 
     const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -931,25 +1000,10 @@
       case 'repaired': return 'Auto-fixed JSON (quotes/commas/comments)';
       case 'jsonl': return 'Converted line-delimited JSON to an array';
       case 'structdump': return 'Converted unquoted struct dump to JSON';
+      case 'lenient': return 'Recovered JSON from an irregular/partial structure (best effort)';
       case 'keyvalue': return 'Converted key/value text to JSON';
       default: return 'Not JSON — wrapped plain text into a JSON object';
     }
-  }
-
-  function showParseError(raw, error) {
-    hidePathBar();
-    lastFormatted = '';
-    lastParsed = undefined;
-    output.className = 'empty error';
-    output.innerHTML = '';
-    const pre = document.createElement('pre');
-    pre.className = 'parse-error';
-    pre.textContent =
-      'Could not parse this as JSON — unexpected content at line ' + error.line + ', column ' + error.col + '.\n\n' +
-      error.snippet + '\n' +
-      ' '.repeat(error.caretOffset) + '^';
-    output.appendChild(pre);
-    setStatus('Invalid syntax — line ' + error.line + ', column ' + error.col + '.', false);
   }
 
   function formatJSON(sourceName, save) {
@@ -964,11 +1018,7 @@
       lastParsed = undefined;
       return;
     }
-    const { value: parsed, method, error } = attemptJSONify(raw);
-    if (method === 'error') {
-      showParseError(raw, error);
-      return;
-    }
+    const { value: parsed, method } = attemptJSONify(raw);
     lastParsed = parsed;
     lastFormatted = JSON.stringify(parsed, null, 2);
     output.className = '';
@@ -988,11 +1038,7 @@
       setStatus('Nothing to minify — paste or open some text first.', false);
       return;
     }
-    const { value: parsed, method, error } = attemptJSONify(raw);
-    if (method === 'error') {
-      showParseError(raw, error);
-      return;
-    }
+    const { value: parsed, method } = attemptJSONify(raw);
     lastParsed = parsed;
     const minified = JSON.stringify(parsed);
     lastFormatted = JSON.stringify(parsed, null, 2);
