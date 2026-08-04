@@ -49,6 +49,13 @@
     --input-bg: #ffffff;
     --input-border: #d6d6d9;
     --shadow: 0 1px 2px rgba(20, 20, 22, 0.05);
+    --diff-modified-bg: rgba(255, 165, 0, 0.20);
+    --diff-modified-border: rgba(200, 120, 0, 0.45);
+    --diff-missing-bg: rgba(255, 0, 0, 0.13);
+    --diff-missing-border: rgba(211, 47, 47, 0.40);
+    --diff-added-bg: rgba(0, 170, 0, 0.15);
+    --diff-added-border: rgba(30, 140, 30, 0.45);
+    --diff-gap-bg: var(--bg-surface-alt);
   }
 
   :root[data-theme="dark"] {
@@ -88,6 +95,13 @@
     --input-bg: #202124;
     --input-border: #3c3d42;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --diff-modified-bg: rgba(255, 175, 70, 0.22);
+    --diff-modified-border: rgba(255, 175, 70, 0.55);
+    --diff-missing-bg: rgba(255, 80, 80, 0.20);
+    --diff-missing-border: rgba(255, 80, 80, 0.55);
+    --diff-added-bg: rgba(70, 200, 110, 0.20);
+    --diff-added-border: rgba(70, 200, 110, 0.55);
+    --diff-gap-bg: var(--bg-surface-alt);
   }
 
   * { box-sizing: border-box; }
@@ -545,6 +559,294 @@
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ===== Compare feature ===== */
+  .view { flex: 1; display: flex; min-height: 0; }
+  .view[hidden] { display: none !important; }
+  .compare-view { flex-direction: column; }
+
+  .compare-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .compare-tabs { display: flex; gap: 4px; }
+
+  .compare-tabs button.tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 11px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .compare-tabs button.tab:hover { background: none; color: var(--text); }
+  .compare-tabs button.tab.active { color: var(--primary-bg); border-bottom-color: var(--primary-bg); }
+
+  .compare-tab-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .compare-tab-panel[hidden] { display: none; }
+
+  .compare-warning {
+    padding: 8px 16px;
+    font-size: 12px;
+    background: #fff3cd;
+    color: #7a5b00;
+    border-bottom: 1px solid #f0dca0;
+  }
+  :root[data-theme="dark"] .compare-warning { background: #4a3f1a; color: #f0d888; border-color: #6b5a1f; }
+  .compare-warning[hidden] { display: none; }
+
+  .compare-input-grid {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    gap: 1px;
+    background: var(--border);
+    overflow: auto;
+  }
+
+  .compare-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--bg-surface);
+  }
+
+  .compare-side-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border-soft);
+    flex-wrap: wrap;
+  }
+
+  .compare-side-header .cs-title { font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+  .compare-side-header .cs-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  .compare-side-header .cs-count { font-size: 11px; color: var(--text-faint); }
+
+  .compare-side textarea {
+    flex: 1;
+    border: none;
+    resize: none;
+    padding: 12px 14px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    outline: none;
+    background: var(--bg-surface);
+    color: var(--text);
+    min-height: 160px;
+  }
+
+  .compare-side.drag-over textarea { background: var(--active-bg); }
+  .compare-side.drag-over { outline: 2px dashed var(--primary-bg); outline-offset: -2px; }
+
+  .compare-side-status {
+    padding: 6px 14px;
+    font-size: 11.5px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    max-height: 90px;
+    overflow: auto;
+  }
+  .compare-side-status.ok { color: var(--status-ok); }
+  .compare-side-status.err { color: var(--status-err); }
+
+  .compare-options {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface-alt);
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .compare-options label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); cursor: pointer; }
+  .compare-options input[type="text"], .compare-options input[type="number"] {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 7px;
+    border-radius: 5px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text);
+    width: 150px;
+  }
+  .compare-options input[type="number"] { width: 64px; }
+
+  .compare-actions {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+    flex-wrap: wrap;
+  }
+
+  .compare-summary {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    flex-wrap: wrap;
+    background: var(--bg-surface-alt);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .summary-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    min-width: 72px;
+  }
+  .summary-pill .sp-value { font-size: 15px; font-weight: 700; }
+  .summary-pill .sp-label { font-size: 9.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; text-align: center; }
+  .summary-pill.sp-modified .sp-value { color: #b3691a; }
+  .summary-pill.sp-missing .sp-value { color: var(--status-err); }
+  .summary-pill.sp-added .sp-value { color: var(--status-ok); }
+  .summary-pill.sp-status-diff { border-color: var(--status-err); }
+  .summary-pill.sp-status-same { border-color: var(--status-ok); }
+
+  .compare-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+    flex-wrap: wrap;
+  }
+  .compare-toolbar select {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text);
+  }
+  #compareSearchInput {
+    flex: 1;
+    min-width: 110px;
+    max-width: 220px;
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text);
+    outline: none;
+  }
+  #compareSearchInput:focus { border-color: var(--primary-bg); }
+
+  .compare-panes {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+
+  .compare-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-right: 1px solid var(--border);
+  }
+  .compare-pane:last-child { border-right: none; }
+
+  .compare-pane-header {
+    padding: 7px 14px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-surface-alt);
+    border-bottom: 1px solid var(--border-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .compare-pane-body {
+    flex: 1;
+    overflow: auto;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    background: var(--bg-surface);
+  }
+
+  .diff-line { display: flex; min-height: 1.6em; white-space: pre; }
+  .diff-line.diff-hidden { display: none; }
+
+  .diff-ln {
+    flex: 0 0 42px;
+    text-align: right;
+    padding-right: 8px;
+    color: var(--text-faint);
+    user-select: none;
+    background: var(--bg-surface-alt);
+    border-right: 1px solid var(--border-soft);
+    position: sticky;
+    left: 0;
+  }
+
+  .diff-content { flex: 1; padding: 0 10px; }
+  .diff-content .diff-toggle { cursor: pointer; color: var(--node-punct); user-select: none; margin-right: 2px; display: inline-block; width: 12px; }
+  .diff-content .diff-key { color: var(--node-key); }
+  .diff-content .diff-str { color: var(--node-string); }
+  .diff-content .diff-num { color: var(--node-number); }
+  .diff-content .diff-bool { color: var(--node-boolean); }
+  .diff-content .diff-null { color: var(--node-null); }
+  .diff-content .diff-punct { color: var(--node-punct); }
+  .diff-content .diff-empty-gap { color: var(--text-faint); font-style: italic; }
+  .diff-content .diff-typenote { color: var(--text-faint); font-style: italic; margin-left: 6px; }
+
+  .diff-content.diff-added { background: var(--diff-added-bg); box-shadow: inset 2px 0 0 0 var(--diff-added-border); }
+  .diff-content.diff-removed { background: var(--diff-missing-bg); box-shadow: inset 2px 0 0 0 var(--diff-missing-border); }
+  .diff-content.diff-modified { background: var(--diff-modified-bg); box-shadow: inset 2px 0 0 0 var(--diff-modified-border); }
+  .diff-content.diff-gapside { background: var(--diff-gap-bg); }
+
+  .diff-content.search-match { outline: 2px solid var(--search-match-bg); outline-offset: -1px; }
+  .diff-line.diff-current-match .diff-content { box-shadow: inset 0 0 0 2px var(--search-current-bg); }
+
+  .compare-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+    font-size: 13px;
+    color: var(--text-muted);
+    gap: 8px;
+  }
+  .compare-loading[hidden] { display: none; }
+
+  .compare-empty-result {
+    padding: 30px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  @media (max-width: 860px) {
+    .compare-input-grid, .compare-panes { flex-direction: column; }
+    .compare-pane { border-right: none; border-bottom: 1px solid var(--border); }
+  }
 </style>
 </head>
 <body>
@@ -559,11 +861,12 @@
     <button id="copyBtn" title="Copy formatted JSON to clipboard">📋 Copy</button>
     <button id="downloadBtn" title="Download as formatted.json">⬇️ Download</button>
     <button id="clearBtn" title="Clear input and result">🗑️ Clear</button>
+    <button id="compareModeBtn" title="Compare two JSON files or text side-by-side">🔀 Compare</button>
     <button id="themeToggle" title="Toggle light/dark mode">🌙</button>
   </div>
 </header>
 
-<main>
+<main id="formatterView" class="view">
   <section class="panel editor-panel">
     <div class="panel-header">
       <span>Input</span>
@@ -615,6 +918,132 @@
     <div id="historyList"></div>
   </aside>
 </main>
+
+<div id="compareView" class="view compare-view" hidden>
+  <div class="compare-header">
+    <div class="compare-tabs">
+      <button class="tab active" id="compareTabInputBtn">Input</button>
+      <button class="tab" id="compareTabResultBtn">Result</button>
+    </div>
+    <button class="btn-sm" id="compareBackBtn">← Back to Formatter</button>
+  </div>
+
+  <!-- ============ INPUT TAB ============ -->
+  <div class="compare-tab-panel" id="compareInputTab">
+    <div class="compare-warning" id="compareWarning" hidden></div>
+
+    <div class="compare-input-grid">
+      <section class="compare-side" data-side="A">
+        <div class="compare-side-header">
+          <span class="cs-title">JSON File A</span>
+          <div class="cs-actions">
+            <span class="cs-count" id="compareCountA"></span>
+            <button class="btn-sm" data-action="paste" title="Paste from clipboard">📋 Paste</button>
+            <label class="file-btn btn-sm" title="Upload a JSON file">📂 Upload</label>
+            <input type="file" class="compare-file-input" accept=".json,.txt,application/json,text/plain">
+            <button class="btn-sm" data-action="format" title="Format / beautify">✨ Format</button>
+            <button class="btn-sm" data-action="validate" title="Validate JSON">✔️ Validate</button>
+          </div>
+        </div>
+        <textarea class="compare-textarea" placeholder="Paste JSON A here, or upload/drop a file…" spellcheck="false"></textarea>
+        <div class="compare-side-status" id="compareStatusA"></div>
+      </section>
+
+      <section class="compare-side" data-side="B">
+        <div class="compare-side-header">
+          <span class="cs-title">JSON File B</span>
+          <div class="cs-actions">
+            <span class="cs-count" id="compareCountB"></span>
+            <button class="btn-sm" data-action="paste" title="Paste from clipboard">📋 Paste</button>
+            <label class="file-btn btn-sm" title="Upload a JSON file">📂 Upload</label>
+            <input type="file" class="compare-file-input" accept=".json,.txt,application/json,text/plain">
+            <button class="btn-sm" data-action="format" title="Format / beautify">✨ Format</button>
+            <button class="btn-sm" data-action="validate" title="Validate JSON">✔️ Validate</button>
+          </div>
+        </div>
+        <textarea class="compare-textarea" placeholder="Paste JSON B here, or upload/drop a file…" spellcheck="false"></textarea>
+        <div class="compare-side-status" id="compareStatusB"></div>
+      </section>
+    </div>
+
+    <div class="compare-options">
+      <label title="Comma-separated key names to skip during comparison">
+        Ignore keys:
+        <input type="text" id="compareIgnoreKeys" placeholder="id, createdAt, updatedAt">
+      </label>
+      <label title="Default compares arrays by best-matching content, ignoring reordering">
+        <input type="checkbox" id="compareStrictArrayOrder"> Strict array order (index-based)
+      </label>
+      <label title="Treat string values as equal regardless of letter case">
+        <input type="checkbox" id="compareCaseInsensitive"> Case-insensitive strings
+      </label>
+      <label title="Allow small numeric differences to count as equal">
+        Number tolerance:
+        <input type="number" id="compareNumTolerance" value="0" min="0" step="any">
+      </label>
+      <label title="Automatically re-compare a few moments after you stop typing">
+        <input type="checkbox" id="compareAutoRun"> Auto-compare while typing
+      </label>
+    </div>
+
+    <div class="compare-actions">
+      <button class="primary" id="runCompareBtn">🔍 Compare</button>
+      <button id="compareClearBtn">🗑️ Clear</button>
+      <button id="compareSwapBtn">⇄ Swap A / B</button>
+      <button id="compareDownloadBtn" disabled>⬇️ Download Result</button>
+    </div>
+  </div>
+
+  <!-- ============ RESULT TAB ============ -->
+  <div class="compare-tab-panel" id="compareResultTab" hidden>
+    <div class="compare-loading" id="compareLoading" hidden>⏳ Comparing…</div>
+    <div id="compareResultBody" hidden>
+      <div class="compare-summary" id="compareSummary"></div>
+
+      <div class="compare-toolbar">
+        <input type="text" id="compareSearchInput" placeholder="🔍 Search keys or values…">
+        <span class="search-count" id="compareSearchCount"></span>
+        <button class="btn-sm" id="comparePrevMatchBtn" title="Previous match">↑</button>
+        <button class="btn-sm" id="compareNextMatchBtn" title="Next match">↓</button>
+        <span class="row-divider"></span>
+        <button class="btn-sm" id="comparePrevDiffBtn" title="Previous difference">⬅ Diff</button>
+        <button class="btn-sm" id="compareNextDiffBtn" title="Next difference">Diff ➡</button>
+        <span class="row-divider"></span>
+        <select id="compareFilterSelect" title="Filter which rows are shown">
+          <option value="all">Show All</option>
+          <option value="diff">Only Differences</option>
+          <option value="added">Added Only</option>
+          <option value="removed">Removed Only</option>
+          <option value="modified">Modified Only</option>
+        </select>
+        <span class="row-divider"></span>
+        <button class="btn-sm" id="compareExpandAllBtn">Expand all</button>
+        <button class="btn-sm" id="compareCollapseAllBtn">Collapse all</button>
+        <span class="row-divider"></span>
+        <button class="btn-sm" id="compareCopyLeftBtn" title="Copy JSON A">📋 Copy A</button>
+        <button class="btn-sm" id="compareCopyRightBtn" title="Copy JSON B">📋 Copy B</button>
+        <button class="btn-sm" id="compareCopyReportBtn" title="Copy a text report of all differences">📋 Copy Report</button>
+        <span class="row-divider"></span>
+        <button class="btn-sm" id="compareExportJsonBtn" title="Export differences as JSON">⬇️ JSON</button>
+        <button class="btn-sm" id="compareExportTxtBtn" title="Export differences as plain text">⬇️ TXT</button>
+        <button class="btn-sm" id="compareExportHtmlBtn" title="Export differences as an HTML report">⬇️ HTML</button>
+        <button class="btn-sm" id="compareExportPdfBtn" title="Open a printable report (use your browser's Save as PDF)">🖨️ PDF</button>
+      </div>
+
+      <div class="compare-panes">
+        <div class="compare-pane" data-side="A">
+          <div class="compare-pane-header" id="comparePaneHeaderA">JSON A</div>
+          <div class="compare-pane-body" id="comparePaneA"></div>
+        </div>
+        <div class="compare-pane" data-side="B">
+          <div class="compare-pane-header" id="comparePaneHeaderB">JSON B</div>
+          <div class="compare-pane-body" id="comparePaneB"></div>
+        </div>
+      </div>
+    </div>
+    <div class="compare-empty-result" id="compareEmptyResult">Run a comparison from the Input tab to see results here.</div>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -1668,6 +2097,928 @@
   });
 
   applyThemeIcon();
+})();
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  // ================= Compare feature =================
+  const MISSING = Symbol('missing');
+  const MAX_LCS = 2000;
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+  const WARN_FILE_SIZE = 5 * 1024 * 1024;
+
+  const sides = {};
+  let lastCompare = null;
+  let currentRows = [];
+  let collapsedSet = new Set();
+  let searchMatches = [];
+  let searchIndex = -1;
+  let diffNavIndex = -1;
+  let filterMode = 'all';
+  let autoCompareTimer = null;
+  let scrollSyncing = false;
+
+  // ---------- small helpers ----------
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(2) + ' MB';
+  }
+  function downloadBlob(content, type, filename) {
+    const blob = new Blob([content], { type: type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  function safeStringify(v) { return typeof v === 'string' ? v : JSON.stringify(v); }
+  function flashCompareButton(btn, label) {
+    if (!btn) return;
+    const original = btn.innerHTML;
+    btn.textContent = label;
+    btn.disabled = true;
+    setTimeout(() => { btn.innerHTML = original; btn.disabled = false; }, 1200);
+  }
+
+  // ================= View / tab switching =================
+  function switchToCompareView() {
+    document.getElementById('formatterView').hidden = true;
+    document.getElementById('compareView').hidden = false;
+  }
+  function switchToFormatterView() {
+    document.getElementById('compareView').hidden = true;
+    document.getElementById('formatterView').hidden = false;
+  }
+  function switchCompareTab(tab) {
+    const isInput = tab === 'input';
+    document.getElementById('compareInputTab').hidden = !isInput;
+    document.getElementById('compareResultTab').hidden = isInput;
+    document.getElementById('compareTabInputBtn').classList.toggle('active', isInput);
+    document.getElementById('compareTabResultBtn').classList.toggle('active', !isInput);
+  }
+  document.getElementById('compareModeBtn').addEventListener('click', switchToCompareView);
+  document.getElementById('compareBackBtn').addEventListener('click', switchToFormatterView);
+  document.getElementById('compareTabInputBtn').addEventListener('click', () => switchCompareTab('input'));
+  document.getElementById('compareTabResultBtn').addEventListener('click', () => switchCompareTab('result'));
+
+  // ================= Warning banner =================
+  function showWarning(msg) {
+    const w = document.getElementById('compareWarning');
+    w.textContent = '⚠️ ' + msg;
+    w.hidden = false;
+  }
+  function hideWarning() {
+    document.getElementById('compareWarning').hidden = true;
+  }
+
+  // ================= Per-side input handling =================
+  function updateSideCount(side) {
+    const text = sides[side].textarea.value;
+    sides[side].countEl.textContent = text ? (text.length.toLocaleString() + ' chars') : '';
+  }
+
+  function setSideStatus(side, msg, kind) {
+    const el = sides[side].statusEl;
+    el.textContent = msg;
+    el.className = 'compare-side-status' + (kind ? ' ' + kind : '');
+  }
+
+  function locateJSONError(text, err) {
+    const m = /position (\d+)/.exec(err.message);
+    if (!m) return null;
+    const pos = parseInt(m[1], 10);
+    let line = 1, col = 1;
+    for (let i = 0; i < pos && i < text.length; i++) {
+      if (text[i] === '\n') { line++; col = 1; } else col++;
+    }
+    return { line, col };
+  }
+
+  function validateSide(side) {
+    const raw = sides[side].textarea.value;
+    if (!raw.trim()) {
+      setSideStatus(side, '✕ Empty JSON input.', 'err');
+      return { ok: false, raw, error: { message: 'Empty JSON input' } };
+    }
+    try {
+      const value = JSON.parse(raw);
+      setSideStatus(side, '✓ Valid JSON · ' + formatBytes(new Blob([raw]).size), 'ok');
+      return { ok: true, raw, value };
+    } catch (e) {
+      const loc = locateJSONError(raw, e);
+      const msg = 'Invalid JSON syntax: ' + e.message + (loc ? ' (line ' + loc.line + ', col ' + loc.col + ')' : '');
+      setSideStatus(side, '✕ ' + msg, 'err');
+      return { ok: false, raw, error: { message: msg } };
+    }
+  }
+
+  function handleSideFile(side, file) {
+    if (!file) return;
+    if (!/\.(json|txt)$/i.test(file.name)) {
+      showWarning('Unsupported file extension for "' + file.name + '" — attempting to read it as plain text anyway.');
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setSideStatus(side, '✕ File too large (' + formatBytes(file.size) + ') — files over 50 MB are not supported.', 'err');
+      return;
+    }
+    if (file.size > WARN_FILE_SIZE) {
+      showWarning('Large file loaded for JSON ' + side + ' (' + formatBytes(file.size) + ') — comparison may take a few seconds.');
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      sides[side].textarea.value = reader.result;
+      updateSideCount(side);
+      validateSide(side);
+    };
+    reader.onerror = () => setSideStatus(side, '✕ File read error: could not read "' + file.name + '".', 'err');
+    reader.readAsText(file);
+  }
+
+  function scheduleAutoCompare() {
+    if (!document.getElementById('compareAutoRun').checked) return;
+    clearTimeout(autoCompareTimer);
+    autoCompareTimer = setTimeout(() => {
+      if (sides.A.textarea.value.trim() && sides.B.textarea.value.trim()) runCompare(false);
+    }, 700);
+  }
+
+  function wireSide(side) {
+    const root = document.querySelector('.compare-side[data-side="' + side + '"]');
+    const textarea = root.querySelector('.compare-textarea');
+    const fileInput = root.querySelector('.compare-file-input');
+    sides[side] = {
+      root, textarea, fileInput,
+      statusEl: document.getElementById('compareStatus' + side),
+      countEl: document.getElementById('compareCount' + side)
+    };
+
+    textarea.addEventListener('input', () => { updateSideCount(side); scheduleAutoCompare(); });
+
+    root.querySelector('[data-action="paste"]').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text.trim()) { setSideStatus(side, '✕ Clipboard is empty.', 'err'); return; }
+        textarea.value = text;
+        updateSideCount(side);
+        validateSide(side);
+        scheduleAutoCompare();
+      } catch (e) {
+        setSideStatus(side, '✕ Could not read clipboard — paste manually with Cmd/Ctrl+V.', 'err');
+      }
+    });
+
+    root.querySelector('[data-action="format"]').addEventListener('click', () => {
+      const r = validateSide(side);
+      if (r.ok) {
+        textarea.value = JSON.stringify(r.value, null, 2);
+        updateSideCount(side);
+        setSideStatus(side, '✓ Formatted.', 'ok');
+      }
+    });
+
+    root.querySelector('[data-action="validate"]').addEventListener('click', () => validateSide(side));
+
+    fileInput.addEventListener('change', (e) => {
+      handleSideFile(side, e.target.files[0]);
+      e.target.value = '';
+    });
+
+    let dragDepth = 0;
+    root.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; root.classList.add('drag-over'); });
+    root.addEventListener('dragover', (e) => e.preventDefault());
+    root.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) root.classList.remove('drag-over');
+    });
+    root.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragDepth = 0;
+      root.classList.remove('drag-over');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) handleSideFile(side, file);
+    });
+
+    updateSideCount(side);
+  }
+
+  // ================= Diff engine =================
+  function typeOf(v) {
+    if (v === MISSING) return 'missing';
+    if (v === null) return 'null';
+    if (Array.isArray(v)) return 'array';
+    return typeof v;
+  }
+
+  function readOptions() {
+    return {
+      ignoreKeys: new Set(document.getElementById('compareIgnoreKeys').value.split(',').map((s) => s.trim()).filter(Boolean)),
+      strictArrayOrder: document.getElementById('compareStrictArrayOrder').checked,
+      caseInsensitive: document.getElementById('compareCaseInsensitive').checked,
+      numTolerance: Math.abs(parseFloat(document.getElementById('compareNumTolerance').value)) || 0
+    };
+  }
+
+  function isIgnoredKey(key, opts) { return key != null && opts.ignoreKeys.has(String(key)); }
+
+  function sameScalar(a, b, type, opts) {
+    if (type === 'number') return Math.abs(a - b) <= opts.numTolerance;
+    if (type === 'string') return opts.caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
+    return a === b;
+  }
+  function sameScalarOrNull(a, b, type, opts) {
+    if (type === 'null') return true;
+    return sameScalar(a, b, type, opts);
+  }
+
+  // Structural equality respecting the same options, used to anchor array LCS matching.
+  function sameValue(a, b, opts) {
+    const ta = typeOf(a), tb = typeOf(b);
+    if (ta !== tb) return false;
+    if (ta === 'null') return true;
+    if (ta === 'object') {
+      const ka = Object.keys(a), kb = Object.keys(b);
+      if (ka.length !== kb.length) return false;
+      for (const k of ka) {
+        if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+        if (!sameValue(a[k], b[k], opts)) return false;
+      }
+      return true;
+    }
+    if (ta === 'array') {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) if (!sameValue(a[i], b[i], opts)) return false;
+      return true;
+    }
+    return sameScalar(a, b, ta, opts);
+  }
+
+  function indexPairs(a, b) {
+    const len = Math.max(a.length, b.length);
+    const pairs = [];
+    for (let i = 0; i < len; i++) pairs.push({ ai: i < a.length ? i : -1, bi: i < b.length ? i : -1 });
+    return pairs;
+  }
+
+  // Classic LCS-based diff: anchors are exactly-equal elements (order preserved);
+  // gaps between anchors are paired 1:1 as "modified" candidates, with any length
+  // surplus falling back to pure removed/added.
+  function lcsMatch(a, b, opts) {
+    const n = a.length, m = b.length;
+    const dp = new Array(n + 1);
+    for (let i = 0; i <= n; i++) dp[i] = new Uint32Array(m + 1);
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = sameValue(a[i], b[j], opts) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const anchors = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (sameValue(a[i], b[j], opts)) { anchors.push([i, j]); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+      else j++;
+    }
+    const pairs = [];
+    let ai = 0, bi = 0;
+    const flushGap = (aEnd, bEnd) => {
+      const gapLen = Math.min(aEnd - ai, bEnd - bi);
+      for (let k = 0; k < gapLen; k++) pairs.push({ ai: ai + k, bi: bi + k });
+      for (let k = gapLen; ai + k < aEnd; k++) pairs.push({ ai: ai + k, bi: -1 });
+      for (let k = gapLen; bi + k < bEnd; k++) pairs.push({ ai: -1, bi: bi + k });
+      ai = aEnd; bi = bEnd;
+    };
+    anchors.forEach(([ax, bx]) => {
+      flushGap(ax, bx);
+      pairs.push({ ai: ax, bi: bx });
+      ai = ax + 1; bi = bx + 1;
+    });
+    flushGap(n, m);
+    return pairs;
+  }
+
+  function matchArrayIndices(a, b, opts) {
+    if (opts.strictArrayOrder) return indexPairs(a, b);
+    if (a.length > MAX_LCS || b.length > MAX_LCS) return indexPairs(a, b);
+    return lcsMatch(a, b, opts);
+  }
+
+  function finalizeContainerStatus(node) {
+    const statuses = new Set();
+    let hasDiff = node.status === 'added' || node.status === 'removed';
+    node.children.forEach((c) => {
+      const child = c.node;
+      const childStatuses = child.isContainer ? child.subtreeStatuses : new Set([child.status]);
+      childStatuses.forEach((s) => statuses.add(s));
+      if (child.status !== 'same' && child.status !== 'ignored') hasDiff = true;
+    });
+    if (node.status === 'added' || node.status === 'removed') statuses.add(node.status);
+    node.hasDiff = hasDiff;
+    node.subtreeStatuses = statuses;
+    if (node.status === 'haschanges') node.status = hasDiff ? 'haschanges' : 'same';
+  }
+
+  function diffObject(aObj, bObj, aMissing, bMissing, path, key, ctx, opts) {
+    ctx.stats.totalKeys++;
+    const aKeys = aObj ? Object.keys(aObj) : [];
+    const bKeys = bObj ? Object.keys(bObj) : [];
+    const seen = new Set();
+    const orderedKeys = [];
+    aKeys.forEach((k) => { if (!seen.has(k)) { seen.add(k); orderedKeys.push(k); } });
+    bKeys.forEach((k) => { if (!seen.has(k)) { seen.add(k); orderedKeys.push(k); } });
+
+    const children = orderedKeys.map((k) => {
+      const av = aObj && Object.prototype.hasOwnProperty.call(aObj, k) ? aObj[k] : MISSING;
+      const bv = bObj && Object.prototype.hasOwnProperty.call(bObj, k) ? bObj[k] : MISSING;
+      return { key: k, node: diffAny(av, bv, path + '.' + k, k, ctx, opts) };
+    });
+
+    const node = {
+      path, key, isContainer: true, containerType: 'object', aMissing, bMissing, children,
+      status: aMissing ? 'added' : (bMissing ? 'removed' : 'haschanges')
+    };
+    finalizeContainerStatus(node);
+    return node;
+  }
+
+  function diffArray(aArr, bArr, aMissing, bMissing, path, key, ctx, opts) {
+    ctx.stats.totalKeys++;
+    const a = aArr || [];
+    const b = bArr || [];
+    const pairs = matchArrayIndices(a, b, opts);
+    const children = pairs.map((p, idx) => {
+      const av = p.ai === -1 ? MISSING : a[p.ai];
+      const bv = p.bi === -1 ? MISSING : b[p.bi];
+      const childNode = diffAny(av, bv, path + '[' + idx + ']', idx, ctx, opts);
+      if (childNode.status !== 'same' && childNode.status !== 'ignored') ctx.stats.arrayDiffs++;
+      return { key: idx, node: childNode };
+    });
+
+    const node = {
+      path, key, isContainer: true, containerType: 'array', aMissing, bMissing, children,
+      status: aMissing ? 'added' : (bMissing ? 'removed' : 'haschanges')
+    };
+    finalizeContainerStatus(node);
+    return node;
+  }
+
+  function diffAny(aVal, bVal, path, key, ctx, opts) {
+    const aMissing = aVal === MISSING, bMissing = bVal === MISSING;
+    if (key !== null && isIgnoredKey(key, opts)) {
+      return {
+        path, key, status: 'ignored', aVal, bVal, aMissing, bMissing, isContainer: false,
+        aType: aMissing ? null : typeOf(aVal), bType: bMissing ? null : typeOf(bVal)
+      };
+    }
+    const aType = aMissing ? null : typeOf(aVal);
+    const bType = bMissing ? null : typeOf(bVal);
+    const isObjA = aType === 'object', isObjB = bType === 'object';
+    const isArrA = aType === 'array', isArrB = bType === 'array';
+    const bothObject = (aMissing || isObjA) && (bMissing || isObjB) && (isObjA || isObjB);
+    const bothArray = (aMissing || isArrA) && (bMissing || isArrB) && (isArrA || isArrB);
+
+    if (bothObject) return diffObject(aMissing ? null : aVal, bMissing ? null : bVal, aMissing, bMissing, path, key, ctx, opts);
+    if (bothArray) return diffArray(aMissing ? null : aVal, bMissing ? null : bVal, aMissing, bMissing, path, key, ctx, opts);
+
+    ctx.stats.totalKeys++;
+    let status;
+    if (aMissing !== bMissing) {
+      status = aMissing ? 'added' : 'removed';
+      if (status === 'added') ctx.stats.added++; else ctx.stats.missing++;
+    } else if (aType !== bType) {
+      status = 'typechange';
+      ctx.stats.typeChanges++;
+    } else if (!sameScalarOrNull(aVal, bVal, aType, opts)) {
+      status = 'modified';
+      ctx.stats.modified++;
+    } else {
+      status = 'same';
+    }
+    return { path, key, status, aVal, bVal, aMissing, bMissing, aType, bType, isContainer: false };
+  }
+
+  // ================= Flatten diff tree into aligned rows =================
+  function keyPrefixHtml(node) {
+    if (typeof node.key === 'string') {
+      return '<span class="diff-key">' + escapeHtml(JSON.stringify(node.key)) + '</span><span class="diff-punct">: </span>';
+    }
+    return '';
+  }
+  function valueHtml(val, type) {
+    switch (type) {
+      case 'string': return '<span class="diff-str">' + escapeHtml(JSON.stringify(val)) + '</span>';
+      case 'number': return '<span class="diff-num">' + String(val) + '</span>';
+      case 'boolean': return '<span class="diff-bool">' + String(val) + '</span>';
+      case 'null': return '<span class="diff-null">null</span>';
+      default: return '<span class="diff-str">' + escapeHtml(String(val)) + '</span>';
+    }
+  }
+  function rowStatusForContainerLine(node) {
+    return (node.status === 'added' || node.status === 'removed') ? node.status : 'same';
+  }
+
+  function makeLeafRow(node, depth, ancestors, isLastSibling) {
+    const prefix = keyPrefixHtml(node);
+    const commaHtml = isLastSibling ? '' : '<span class="diff-punct">,</span>';
+    const typeNote = node.status === 'typechange'
+      ? ' <span class="diff-typenote">(' + node.aType + ' → ' + node.bType + ')</span>' : '';
+    const a = node.aMissing ? { present: false } : { present: true, html: prefix + valueHtml(node.aVal, node.aType) + typeNote + commaHtml };
+    const b = node.bMissing ? { present: false } : { present: true, html: prefix + valueHtml(node.bVal, node.bType) + typeNote + commaHtml };
+    const keyText = typeof node.key === 'string' ? node.key.toLowerCase() : '';
+    const valText = (node.aMissing ? '' : String(node.aVal)) + ' ' + (node.bMissing ? '' : String(node.bVal));
+    return {
+      path: node.path, depth, ancestors, isOpen: false, status: node.status, a, b,
+      filterStatuses: new Set([node.status]), hasDiff: node.status !== 'same' && node.status !== 'ignored',
+      searchText: (keyText + ' ' + valText).toLowerCase()
+    };
+  }
+
+  function makeEmptyContainerRow(node, depth, ancestors, isLastSibling) {
+    const prefix = keyPrefixHtml(node);
+    const brackets = node.containerType === 'array' ? '[]' : '{}';
+    const commaHtml = isLastSibling ? '' : '<span class="diff-punct">,</span>';
+    const status = rowStatusForContainerLine(node);
+    function sideHtml(missing) {
+      if (missing) return { present: false };
+      return { present: true, html: prefix + '<span class="diff-punct">' + brackets + '</span>' + commaHtml };
+    }
+    const keyText = typeof node.key === 'string' ? node.key.toLowerCase() : '';
+    return {
+      path: node.path, depth, ancestors, isOpen: false, status,
+      a: sideHtml(node.aMissing), b: sideHtml(node.bMissing),
+      filterStatuses: new Set([status]), hasDiff: node.hasDiff, searchText: keyText
+    };
+  }
+
+  function makeContainerOpenRow(node, depth, ancestors) {
+    const prefix = keyPrefixHtml(node);
+    const bracket = node.containerType === 'array' ? '[' : '{';
+    const toggleHtml = '<span class="diff-toggle" data-toggle-path="' + escapeAttr(node.path) + '">▾</span>';
+    const status = rowStatusForContainerLine(node);
+    function sideHtml(missing) {
+      if (missing) return { present: false };
+      return { present: true, html: prefix + toggleHtml + '<span class="diff-punct">' + bracket + '</span>' };
+    }
+    const keyText = typeof node.key === 'string' ? node.key.toLowerCase() : '';
+    return {
+      path: node.path, depth, ancestors, isOpen: true, status,
+      a: sideHtml(node.aMissing), b: sideHtml(node.bMissing),
+      filterStatuses: node.subtreeStatuses, hasDiff: node.hasDiff, searchText: keyText
+    };
+  }
+
+  function makeContainerCloseRow(node, depth, ancestors, isLastSibling) {
+    const bracket = node.containerType === 'array' ? ']' : '}';
+    const commaHtml = isLastSibling ? '' : '<span class="diff-punct">,</span>';
+    const status = rowStatusForContainerLine(node);
+    function sideHtml(missing) {
+      if (missing) return { present: false };
+      return { present: true, html: '<span class="diff-punct">' + bracket + '</span>' + commaHtml };
+    }
+    return {
+      path: node.path + ' close', depth, ancestors, isOpen: false, status,
+      a: sideHtml(node.aMissing), b: sideHtml(node.bMissing),
+      filterStatuses: node.subtreeStatuses, hasDiff: node.hasDiff, searchText: ''
+    };
+  }
+
+  function flattenNode(node, depth, rows, ancestors, isLastSibling) {
+    if (node.isContainer) {
+      if (node.children.length === 0) {
+        rows.push(makeEmptyContainerRow(node, depth, ancestors, isLastSibling));
+        return;
+      }
+      rows.push(makeContainerOpenRow(node, depth, ancestors));
+      const childAncestors = ancestors.concat([node.path]);
+      node.children.forEach((c, i) => flattenNode(c.node, depth + 1, rows, childAncestors, i === node.children.length - 1));
+      rows.push(makeContainerCloseRow(node, depth, ancestors, isLastSibling));
+    } else {
+      rows.push(makeLeafRow(node, depth, ancestors, isLastSibling));
+    }
+  }
+
+  function flattenTree(root) {
+    const rows = [];
+    flattenNode(root, 0, rows, [], true);
+    rows.forEach((r, i) => { r.id = i; });
+    return rows;
+  }
+
+  // ================= Rendering =================
+  function buildLineEl(sideData, lineNo, row) {
+    const line = document.createElement('div');
+    line.className = 'diff-line';
+    const ln = document.createElement('span');
+    ln.className = 'diff-ln';
+    ln.textContent = String(lineNo);
+    const content = document.createElement('span');
+    content.className = 'diff-content';
+    content.style.paddingLeft = (10 + row.depth * 16) + 'px';
+    if (!sideData.present) {
+      content.classList.add('diff-gapside');
+    } else {
+      content.innerHTML = sideData.html;
+      if (row.status === 'added') content.classList.add('diff-added');
+      else if (row.status === 'removed') content.classList.add('diff-removed');
+      else if (row.status === 'modified' || row.status === 'typechange') content.classList.add('diff-modified');
+    }
+    line.appendChild(ln);
+    line.appendChild(content);
+    return line;
+  }
+
+  function renderRows(rows) {
+    const paneA = document.getElementById('comparePaneA');
+    const paneB = document.getElementById('comparePaneB');
+    paneA.innerHTML = '';
+    paneB.innerHTML = '';
+    const fragA = document.createDocumentFragment();
+    const fragB = document.createDocumentFragment();
+    rows.forEach((row, i) => {
+      const lineNo = i + 1;
+      row.elA = buildLineEl(row.a, lineNo, row);
+      row.elB = buildLineEl(row.b, lineNo, row);
+      fragA.appendChild(row.elA);
+      fragB.appendChild(row.elB);
+    });
+    paneA.appendChild(fragA);
+    paneB.appendChild(fragB);
+  }
+
+  function rowHiddenByCollapse(row) { return row.ancestors.some((p) => collapsedSet.has(p)); }
+  function rowHiddenByFilter(row) {
+    if (filterMode === 'all') return false;
+    if (filterMode === 'diff') return !row.hasDiff;
+    if (filterMode === 'modified') return !(row.filterStatuses.has('modified') || row.filterStatuses.has('typechange'));
+    return !row.filterStatuses.has(filterMode);
+  }
+  function applyVisibility() {
+    currentRows.forEach((row) => {
+      const hidden = rowHiddenByCollapse(row) || rowHiddenByFilter(row);
+      if (row.elA) row.elA.classList.toggle('diff-hidden', hidden);
+      if (row.elB) row.elB.classList.toggle('diff-hidden', hidden);
+    });
+  }
+  function refreshAllToggleGlyphs() {
+    document.querySelectorAll('#comparePaneA .diff-toggle, #comparePaneB .diff-toggle').forEach((el) => {
+      el.textContent = collapsedSet.has(el.dataset.togglePath) ? '▸' : '▾';
+    });
+  }
+  function toggleCollapse(path) {
+    if (collapsedSet.has(path)) collapsedSet.delete(path); else collapsedSet.add(path);
+    refreshAllToggleGlyphs();
+    applyVisibility();
+  }
+  function handlePaneClick(e) {
+    const toggle = e.target.closest('.diff-toggle');
+    if (toggle) toggleCollapse(toggle.dataset.togglePath);
+  }
+  document.getElementById('comparePaneA').addEventListener('click', handlePaneClick);
+  document.getElementById('comparePaneB').addEventListener('click', handlePaneClick);
+
+  document.getElementById('compareExpandAllBtn').addEventListener('click', () => {
+    collapsedSet.clear();
+    refreshAllToggleGlyphs();
+    applyVisibility();
+  });
+  document.getElementById('compareCollapseAllBtn').addEventListener('click', () => {
+    currentRows.forEach((r) => { if (r.isOpen) collapsedSet.add(r.path); });
+    refreshAllToggleGlyphs();
+    applyVisibility();
+  });
+  document.getElementById('compareFilterSelect').addEventListener('change', (e) => {
+    filterMode = e.target.value;
+    applyVisibility();
+  });
+
+  // ---------- synchronized scrolling ----------
+  function wireScrollSync() {
+    const a = document.getElementById('comparePaneA');
+    const b = document.getElementById('comparePaneB');
+    function mirror(from, to) {
+      return () => {
+        if (scrollSyncing) return;
+        scrollSyncing = true;
+        to.scrollTop = from.scrollTop;
+        to.scrollLeft = from.scrollLeft;
+        scrollSyncing = false;
+      };
+    }
+    a.addEventListener('scroll', mirror(a, b));
+    b.addEventListener('scroll', mirror(b, a));
+  }
+
+  // ================= Summary =================
+  function renderSummary(stats) {
+    const el = document.getElementById('compareSummary');
+    const hasDiffs = (stats.modified + stats.missing + stats.added + stats.typeChanges) > 0;
+    const pills = [
+      ['Total Keys Compared', stats.totalKeys, ''],
+      ['Modified Values', stats.modified, 'sp-modified'],
+      ['Missing Keys', stats.missing, 'sp-missing'],
+      ['Added Keys', stats.added, 'sp-added'],
+      ['Type Changes', stats.typeChanges, 'sp-modified'],
+      ['Array Differences', stats.arrayDiffs, 'sp-modified']
+    ];
+    el.innerHTML = pills.map((p) =>
+      '<div class="summary-pill ' + p[2] + '"><span class="sp-value">' + p[1].toLocaleString() + '</span><span class="sp-label">' + p[0] + '</span></div>'
+    ).join('') +
+      '<div class="summary-pill ' + (hasDiffs ? 'sp-status-diff' : 'sp-status-same') + '">' +
+      '<span class="sp-value">' + (hasDiffs ? '⚠️' : '✅') + '</span>' +
+      '<span class="sp-label">' + (hasDiffs ? 'Differences Found' : 'Identical') + '</span></div>';
+  }
+
+  // ================= Search =================
+  function clearCompareSearchHighlights() {
+    document.querySelectorAll('#comparePaneA .search-match, #comparePaneB .search-match').forEach((el) => el.classList.remove('search-match'));
+  }
+  function updateCompareSearchCount() {
+    const countEl = document.getElementById('compareSearchCount');
+    const q = document.getElementById('compareSearchInput').value.trim();
+    countEl.textContent = !searchMatches.length ? (q ? '0 / 0' : '') : (searchIndex + 1) + ' / ' + searchMatches.length;
+  }
+  function focusCompareMatch() {
+    document.querySelectorAll('#comparePaneA .diff-current-match, #comparePaneB .diff-current-match').forEach((el) => el.classList.remove('diff-current-match'));
+    const m = searchMatches[searchIndex];
+    if (!m) return;
+    if (m.row.elA) m.row.elA.classList.add('diff-current-match');
+    if (m.row.elB) m.row.elB.classList.add('diff-current-match');
+    const target = m.row.elA || m.row.elB;
+    if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  function performCompareSearch(query) {
+    clearCompareSearchHighlights();
+    const q = query.trim().toLowerCase();
+    searchMatches = [];
+    searchIndex = -1;
+    if (!q) { updateCompareSearchCount(); return; }
+    currentRows.forEach((row) => {
+      if (row.searchText && row.searchText.includes(q)) searchMatches.push({ row });
+    });
+    searchMatches.forEach((m) => {
+      m.row.ancestors.forEach((p) => collapsedSet.delete(p));
+      const ca = m.row.elA && m.row.elA.querySelector('.diff-content');
+      const cb = m.row.elB && m.row.elB.querySelector('.diff-content');
+      if (ca && !ca.classList.contains('diff-gapside')) ca.classList.add('search-match');
+      if (cb && !cb.classList.contains('diff-gapside')) cb.classList.add('search-match');
+    });
+    refreshAllToggleGlyphs();
+    applyVisibility();
+    if (searchMatches.length) { searchIndex = 0; focusCompareMatch(); }
+    updateCompareSearchCount();
+  }
+  function goToCompareMatch(delta) {
+    if (!searchMatches.length) return;
+    searchIndex = (searchIndex + delta + searchMatches.length) % searchMatches.length;
+    focusCompareMatch();
+    updateCompareSearchCount();
+  }
+  const compareSearchInput = document.getElementById('compareSearchInput');
+  compareSearchInput.addEventListener('input', () => performCompareSearch(compareSearchInput.value));
+  compareSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); goToCompareMatch(e.shiftKey ? -1 : 1); }
+  });
+  document.getElementById('comparePrevMatchBtn').addEventListener('click', () => goToCompareMatch(-1));
+  document.getElementById('compareNextMatchBtn').addEventListener('click', () => goToCompareMatch(1));
+
+  // ================= Difference navigation =================
+  function currentDiffRows() {
+    return currentRows.filter((r) => !r.isOpen && (r.status === 'added' || r.status === 'removed' || r.status === 'modified' || r.status === 'typechange'));
+  }
+  function navigateDiff(delta) {
+    const rows = currentDiffRows();
+    if (!rows.length) return;
+    diffNavIndex = (diffNavIndex + delta + rows.length) % rows.length;
+    const row = rows[diffNavIndex];
+    row.ancestors.forEach((p) => collapsedSet.delete(p));
+    refreshAllToggleGlyphs();
+    applyVisibility();
+    document.querySelectorAll('#comparePaneA .diff-current-match, #comparePaneB .diff-current-match').forEach((el) => el.classList.remove('diff-current-match'));
+    if (row.elA) row.elA.classList.add('diff-current-match');
+    if (row.elB) row.elB.classList.add('diff-current-match');
+    const target = row.elA || row.elB;
+    if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  document.getElementById('comparePrevDiffBtn').addEventListener('click', () => navigateDiff(-1));
+  document.getElementById('compareNextDiffBtn').addEventListener('click', () => navigateDiff(1));
+
+  // ================= Report / export =================
+  function collectDiffs(node, out) {
+    if (node.isContainer) {
+      if (node.children.length === 0) { if (node.status !== 'same') out.push(node); return; }
+      if (node.status === 'added' || node.status === 'removed') { out.push(node); return; }
+      node.children.forEach((c) => collectDiffs(c.node, out));
+    } else if (node.status !== 'same' && node.status !== 'ignored') {
+      out.push(node);
+    }
+  }
+  function buildDiffEntries() {
+    if (!lastCompare) return [];
+    const out = [];
+    collectDiffs(lastCompare.root, out);
+    return out.map((n) => ({
+      path: n.path, status: n.status,
+      left: n.aMissing ? undefined : n.aVal,
+      right: n.bMissing ? undefined : n.bVal
+    }));
+  }
+  function buildDiffReportTextFromEntries(entries) {
+    const s = lastCompare.ctx.stats;
+    const lines = [
+      'JSON Comparison Report', '=======================', '',
+      'Total Keys Compared : ' + s.totalKeys,
+      'Modified Values     : ' + s.modified,
+      'Missing Keys        : ' + s.missing,
+      'Added Keys          : ' + s.added,
+      'Type Changes        : ' + s.typeChanges,
+      'Array Differences   : ' + s.arrayDiffs,
+      'Status              : ' + (entries.length ? 'Differences Found' : 'Identical'), ''
+    ];
+    entries.forEach((e) => {
+      lines.push('[' + e.status.toUpperCase() + '] ' + e.path);
+      if (e.left !== undefined) lines.push('   A: ' + safeStringify(e.left));
+      if (e.right !== undefined) lines.push('   B: ' + safeStringify(e.right));
+    });
+    if (!entries.length) lines.push('No differences found — both JSON structures are equivalent.');
+    return lines.join('\n');
+  }
+  function buildHtmlReport() {
+    const entries = buildDiffEntries();
+    const s = lastCompare.ctx.stats;
+    const rowsHtml = entries.map((e) =>
+      '<tr class="row-' + e.status + '"><td>' + e.status.toUpperCase() + '</td><td>' + escapeHtml(e.path) + '</td>' +
+      '<td>' + (e.left !== undefined ? escapeHtml(safeStringify(e.left)) : '<em>—</em>') + '</td>' +
+      '<td>' + (e.right !== undefined ? escapeHtml(safeStringify(e.right)) : '<em>—</em>') + '</td></tr>'
+    ).join('');
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>JSON Comparison Report</title><style>' +
+      'body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:24px;color:#1e1e1e}' +
+      'h1{font-size:18px}table{border-collapse:collapse;width:100%;margin-top:14px;font-size:13px}' +
+      'th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top;word-break:break-word}' +
+      'th{background:#f4f4f5}.row-added{background:#eafaf0}.row-removed{background:#fdecec}' +
+      '.row-modified,.row-typechange{background:#fff4e0}.summary span{display:inline-block;margin-right:18px;font-size:13px}' +
+      '</style></head><body>' +
+      '<h1>JSON Comparison Report</h1>' +
+      '<div class="summary">' +
+      '<span><b>Total Keys Compared:</b> ' + s.totalKeys + '</span>' +
+      '<span><b>Modified:</b> ' + s.modified + '</span>' +
+      '<span><b>Missing:</b> ' + s.missing + '</span>' +
+      '<span><b>Added:</b> ' + s.added + '</span>' +
+      '<span><b>Type Changes:</b> ' + s.typeChanges + '</span>' +
+      '<span><b>Array Diffs:</b> ' + s.arrayDiffs + '</span>' +
+      '<span><b>Status:</b> ' + (entries.length ? 'Differences Found' : 'Identical') + '</span>' +
+      '</div>' +
+      '<table><thead><tr><th>Type</th><th>Path</th><th>JSON A</th><th>JSON B</th></tr></thead><tbody>' +
+      (rowsHtml || '<tr><td colspan="4">No differences found.</td></tr>') + '</tbody></table>' +
+      '</body></html>';
+  }
+  function exportJson() {
+    if (!lastCompare) return;
+    const entries = buildDiffEntries();
+    const payload = { summary: lastCompare.ctx.stats, status: entries.length ? 'Differences Found' : 'Identical', differences: entries };
+    downloadBlob(JSON.stringify(payload, null, 2), 'application/json', 'json-comparison-result.json');
+  }
+  function exportHtml() {
+    if (!lastCompare) return;
+    downloadBlob(buildHtmlReport(), 'text/html', 'json-comparison-report.html');
+  }
+  function exportPdf() {
+    if (!lastCompare) return;
+    const win = window.open('', '_blank');
+    if (!win) { alert('Please allow pop-ups to export as PDF.'); return; }
+    win.document.write(buildHtmlReport());
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }
+
+  async function copySideJson(side) {
+    if (!lastCompare) return;
+    const value = side === 'A' ? lastCompare.valueA : lastCompare.valueB;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
+      flashCompareButton(document.getElementById(side === 'A' ? 'compareCopyLeftBtn' : 'compareCopyRightBtn'), '✅ Copied');
+    } catch (e) { /* clipboard unavailable */ }
+  }
+  document.getElementById('compareCopyLeftBtn').addEventListener('click', () => copySideJson('A'));
+  document.getElementById('compareCopyRightBtn').addEventListener('click', () => copySideJson('B'));
+  document.getElementById('compareCopyReportBtn').addEventListener('click', async () => {
+    if (!lastCompare) return;
+    try {
+      await navigator.clipboard.writeText(buildDiffReportTextFromEntries(buildDiffEntries()));
+      flashCompareButton(document.getElementById('compareCopyReportBtn'), '✅ Copied');
+    } catch (e) { /* clipboard unavailable */ }
+  });
+  document.getElementById('compareExportJsonBtn').addEventListener('click', exportJson);
+  document.getElementById('compareExportTxtBtn').addEventListener('click', () => {
+    if (!lastCompare) return;
+    downloadBlob(buildDiffReportTextFromEntries(buildDiffEntries()), 'text/plain', 'json-comparison-report.txt');
+  });
+  document.getElementById('compareExportHtmlBtn').addEventListener('click', exportHtml);
+  document.getElementById('compareExportPdfBtn').addEventListener('click', exportPdf);
+  document.getElementById('compareDownloadBtn').addEventListener('click', exportJson);
+
+  // ================= Run compare =================
+  function showResultLoading() {
+    document.getElementById('compareLoading').hidden = false;
+    document.getElementById('compareResultBody').hidden = true;
+    document.getElementById('compareEmptyResult').hidden = true;
+  }
+  function showResultError(msg) {
+    document.getElementById('compareLoading').hidden = true;
+    document.getElementById('compareResultBody').hidden = true;
+    const empty = document.getElementById('compareEmptyResult');
+    empty.hidden = false;
+    empty.textContent = msg;
+  }
+  function buildRowsAndRender(root, ctx) {
+    document.getElementById('compareLoading').hidden = true;
+    document.getElementById('compareEmptyResult').hidden = true;
+    document.getElementById('compareResultBody').hidden = false;
+    collapsedSet = new Set();
+    filterMode = 'all';
+    document.getElementById('compareFilterSelect').value = 'all';
+    diffNavIndex = -1;
+    currentRows = flattenTree(root);
+    renderRows(currentRows);
+    applyVisibility();
+    renderSummary(ctx.stats);
+    searchMatches = [];
+    searchIndex = -1;
+    const q = document.getElementById('compareSearchInput').value;
+    if (q.trim()) performCompareSearch(q); else updateCompareSearchCount();
+  }
+
+  function runCompare(switchTab) {
+    hideWarning();
+    const rA = validateSide('A');
+    const rB = validateSide('B');
+    if (!rA.ok || !rB.ok) return;
+    showResultLoading();
+    if (switchTab) switchCompareTab('result');
+    setTimeout(() => {
+      try {
+        const opts = readOptions();
+        const ctx = { stats: { totalKeys: 0, modified: 0, missing: 0, added: 0, typeChanges: 0, arrayDiffs: 0 } };
+        const root = diffAny(rA.value, rB.value, '$', null, ctx, opts);
+        lastCompare = { root, ctx, rawA: rA.raw, rawB: rB.raw, valueA: rA.value, valueB: rB.value };
+        buildRowsAndRender(root, ctx);
+        document.getElementById('compareDownloadBtn').disabled = false;
+      } catch (e) {
+        showResultError('Comparison failed: ' + e.message + '. This may be caused by extremely large or deeply nested input.');
+      }
+    }, 10);
+  }
+  document.getElementById('runCompareBtn').addEventListener('click', () => runCompare(true));
+
+  // ================= Clear / Swap =================
+  document.getElementById('compareClearBtn').addEventListener('click', () => {
+    sides.A.textarea.value = '';
+    sides.B.textarea.value = '';
+    updateSideCount('A');
+    updateSideCount('B');
+    setSideStatus('A', '', '');
+    setSideStatus('B', '', '');
+    hideWarning();
+    lastCompare = null;
+    currentRows = [];
+    collapsedSet = new Set();
+    searchMatches = [];
+    searchIndex = -1;
+    document.getElementById('compareDownloadBtn').disabled = true;
+    document.getElementById('compareResultBody').hidden = true;
+    const empty = document.getElementById('compareEmptyResult');
+    empty.hidden = false;
+    empty.textContent = 'Run a comparison from the Input tab to see results here.';
+    switchCompareTab('input');
+  });
+
+  document.getElementById('compareSwapBtn').addEventListener('click', () => {
+    const tmp = sides.A.textarea.value;
+    sides.A.textarea.value = sides.B.textarea.value;
+    sides.B.textarea.value = tmp;
+    updateSideCount('A');
+    updateSideCount('B');
+    setSideStatus('A', '', '');
+    setSideStatus('B', '', '');
+    document.getElementById('compareDownloadBtn').disabled = true;
+    lastCompare = null;
+  });
+
+  // ================= Init =================
+  wireSide('A');
+  wireSide('B');
+  wireScrollSync();
 })();
 </script>
 
