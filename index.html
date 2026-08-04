@@ -664,6 +664,23 @@
   .compare-side-status.ok { color: var(--status-ok); }
   .compare-side-status.err { color: var(--status-err); }
 
+  .compare-wrapper-hint {
+    padding: 6px 14px;
+    font-size: 11.5px;
+    background: var(--active-bg);
+    border-top: 1px solid var(--border-soft);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .compare-wrapper-hint[hidden] { display: none; }
+  .compare-wrapper-hint button {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
   .compare-options {
     display: flex;
     align-items: flex-start;
@@ -981,6 +998,7 @@
         </div>
         <textarea class="compare-textarea" placeholder="Paste JSON A here — strict JSON, JS-style objects, or key: value text all work — or upload/drop a file…" spellcheck="false"></textarea>
         <div class="compare-side-status" id="compareStatusA">Nothing checked yet — paste text, then click Validate or Compare.</div>
+        <div class="compare-wrapper-hint" id="compareWrapperHintA" hidden></div>
       </section>
 
       <section class="compare-side" data-side="B">
@@ -997,6 +1015,7 @@
         </div>
         <textarea class="compare-textarea" placeholder="Paste JSON B here — strict JSON, JS-style objects, or key: value text all work — or upload/drop a file…" spellcheck="false"></textarea>
         <div class="compare-side-status" id="compareStatusB">Nothing checked yet — paste text, then click Validate or Compare.</div>
+        <div class="compare-wrapper-hint" id="compareWrapperHintB" hidden></div>
       </section>
     </div>
 
@@ -1028,6 +1047,19 @@
           <span class="cog-label">Number tolerance</span>
           <input type="number" id="compareNumTolerance" value="0" min="0" step="any">
         </label>
+      </div>
+
+      <div class="compare-options-group">
+        <div class="cog-title">🗂 Root Path</div>
+        <label title="Compare starting from this nested path inside JSON A instead of its document root — e.g. 'data' or 'results[0]'. Leave blank to use the root as-is.">
+          <span class="cog-label">Root path in A</span>
+          <input type="text" id="compareRootPathA" placeholder="e.g. data">
+        </label>
+        <label title="Compare starting from this nested path inside JSON B instead of its document root. Leave blank to use the root as-is.">
+          <span class="cog-label">Root path in B</span>
+          <input type="text" id="compareRootPathB" placeholder="e.g. data">
+        </label>
+        <span class="cog-hint">Use this when one side wraps its payload differently (e.g. { "data": {...} }) so matching fields line up instead of showing as entirely added/removed.</span>
       </div>
 
       <div class="compare-options-group">
@@ -2261,13 +2293,87 @@
     const raw = sides[side].textarea.value;
     if (!raw.trim()) {
       setSideStatus(side, '✕ Empty input — paste, upload, or drop some text first.', 'err');
+      sides[side].lastValue = undefined;
+      checkWrapperHint(side, undefined);
       return { ok: false, raw, error: { message: 'Empty input' } };
     }
     const { value, method } = window.jsonViewerAttemptJSONify(raw);
     const label = window.jsonViewerMethodStatus(method);
     setSideStatus(side, '✓ ' + label + ' · ' + formatBytes(new Blob([raw]).size), 'ok');
+    sides[side].lastValue = value;
+    checkWrapperHint(side, value);
     return { ok: true, raw, value, method };
   }
+
+  // Resolves a dot/bracket path like "data" or "results[0].payload" against a
+  // parsed JSON value, so comparison can start from a nested point instead of
+  // the document root — useful when one side wraps its payload differently
+  // (e.g. an API response nesting everything under a "data" key).
+  function resolveRootPath(value, pathStr) {
+    const trimmed = (pathStr || '').trim();
+    if (!trimmed) return { ok: true, value };
+    const segments = [];
+    trimmed.split('.').forEach((part) => {
+      part = part.trim();
+      if (!part) return;
+      const m = part.match(/^([^\[\]]*)((?:\[\d+\])*)$/);
+      if (!m) { segments.push(part); return; }
+      if (m[1]) segments.push(m[1]);
+      const idxMatches = m[2].match(/\[\d+\]/g);
+      if (idxMatches) idxMatches.forEach((im) => segments.push(parseInt(im.slice(1, -1), 10)));
+    });
+    let cur = value;
+    for (const seg of segments) {
+      if (cur === null || typeof cur !== 'object') {
+        return { ok: false, reason: 'Path segment "' + seg + '" not found (reached a non-object value first).' };
+      }
+      if (typeof seg === 'number') {
+        if (!Array.isArray(cur) || seg < 0 || seg >= cur.length) {
+          return { ok: false, reason: 'Array index [' + seg + '] is out of range.' };
+        }
+        cur = cur[seg];
+      } else {
+        if (!Object.prototype.hasOwnProperty.call(cur, seg)) {
+          return { ok: false, reason: 'Key "' + seg + '" was not found at this level.' };
+        }
+        cur = cur[seg];
+      }
+    }
+    return { ok: true, value: cur };
+  }
+
+  // Suggests unwrapping a single-key root object (e.g. { "data": {...} })
+  // into a clickable chip, so the common "API response envelope" case can be
+  // fixed with one click instead of typing the root-path field by hand.
+  function checkWrapperHint(side, value) {
+    const hintEl = document.getElementById('compareWrapperHint' + side);
+    const pathInput = document.getElementById('compareRootPath' + side);
+    if (pathInput.value.trim()) { hintEl.hidden = true; return; }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const keys = Object.keys(value);
+      if (keys.length === 1 && value[keys[0]] !== null && typeof value[keys[0]] === 'object') {
+        hintEl.innerHTML = '';
+        const label = document.createElement('span');
+        label.textContent = '💡 This root is just a single key, "' + keys[0] + '" —';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-sm';
+        btn.textContent = 'Use "' + keys[0] + '" as root';
+        btn.addEventListener('click', () => {
+          pathInput.value = keys[0];
+          hintEl.hidden = true;
+        });
+        hintEl.appendChild(label);
+        hintEl.appendChild(btn);
+        hintEl.hidden = false;
+        return;
+      }
+    }
+    hintEl.hidden = true;
+  }
+
+  document.getElementById('compareRootPathA').addEventListener('input', () => checkWrapperHint('A', sides.A.lastValue));
+  document.getElementById('compareRootPathB').addEventListener('input', () => checkWrapperHint('B', sides.B.lastValue));
 
   function handleSideFile(side, file) {
     if (!file) return;
@@ -3081,14 +3187,20 @@
     const rA = validateSide('A');
     const rB = validateSide('B');
     if (!rA.ok || !rB.ok) return;
+
+    const resA = resolveRootPath(rA.value, document.getElementById('compareRootPathA').value);
+    const resB = resolveRootPath(rB.value, document.getElementById('compareRootPathB').value);
+    if (!resA.ok) { showWarning('JSON A root path: ' + resA.reason); return; }
+    if (!resB.ok) { showWarning('JSON B root path: ' + resB.reason); return; }
+
     showResultLoading();
     if (switchTab) switchCompareTab('result');
     setTimeout(() => {
       try {
         const opts = readOptions();
         const ctx = { stats: { totalKeys: 0, modified: 0, missing: 0, added: 0, typeChanges: 0, arrayDiffs: 0 } };
-        const root = diffAny(rA.value, rB.value, '$', null, ctx, opts);
-        lastCompare = { root, ctx, rawA: rA.raw, rawB: rB.raw, valueA: rA.value, valueB: rB.value };
+        const root = diffAny(resA.value, resB.value, '$', null, ctx, opts);
+        lastCompare = { root, ctx, rawA: rA.raw, rawB: rB.raw, valueA: resA.value, valueB: resB.value };
         buildRowsAndRender(root, ctx);
         document.getElementById('compareDownloadBtn').disabled = false;
       } catch (e) {
@@ -3106,6 +3218,12 @@
     updateSideCount('B');
     setSideStatus('A', 'Nothing checked yet — paste text, then click Validate or Compare.', '');
     setSideStatus('B', 'Nothing checked yet — paste text, then click Validate or Compare.', '');
+    document.getElementById('compareRootPathA').value = '';
+    document.getElementById('compareRootPathB').value = '';
+    document.getElementById('compareWrapperHintA').hidden = true;
+    document.getElementById('compareWrapperHintB').hidden = true;
+    sides.A.lastValue = undefined;
+    sides.B.lastValue = undefined;
     hideWarning();
     lastCompare = null;
     currentRows = [];
@@ -3126,6 +3244,11 @@
     sides.B.textarea.value = tmp;
     updateSideCount('A');
     updateSideCount('B');
+    const rootA = document.getElementById('compareRootPathA');
+    const rootB = document.getElementById('compareRootPathB');
+    const tmpPath = rootA.value;
+    rootA.value = rootB.value;
+    rootB.value = tmpPath;
     validateSide('A');
     validateSide('B');
     document.getElementById('compareDownloadBtn').disabled = true;
