@@ -631,6 +631,7 @@
   }
 
   .compare-side-header .cs-title { font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+  .compare-side-header .cs-subtitle { font-weight: 400; color: var(--text-faint); }
   .compare-side-header .cs-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
   .compare-side-header .cs-count { font-size: 11px; color: var(--text-faint); }
 
@@ -665,26 +666,59 @@
 
   .compare-options {
     display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 8px 16px;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
     border-top: 1px solid var(--border);
     background: var(--bg-surface-alt);
-    font-size: 12px;
     flex-wrap: wrap;
   }
-  .compare-options label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); cursor: pointer; }
-  .compare-options input[type="text"], .compare-options input[type="number"] {
+  .compare-options-group {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 10px 14px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    min-width: 220px;
+  }
+  .cog-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+  }
+  .compare-options-group label {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .compare-options-group label.cog-checkbox-row { flex-direction: row; align-items: center; gap: 6px; }
+  .cog-label { font-weight: 500; }
+  .cog-hint {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    font-style: italic;
+    line-height: 1.35;
+  }
+  .compare-options-group input[type="text"], .compare-options-group input[type="number"] {
     font-family: inherit;
     font-size: 12px;
-    padding: 4px 7px;
+    padding: 5px 8px;
     border-radius: 5px;
     border: 1px solid var(--input-border);
     background: var(--input-bg);
     color: var(--text);
-    width: 150px;
+    width: 100%;
+    box-sizing: border-box;
   }
-  .compare-options input[type="number"] { width: 64px; }
+  .compare-options-group input[type="number"] { width: 72px; }
 
   .compare-actions {
     display: flex;
@@ -935,55 +969,74 @@
     <div class="compare-input-grid">
       <section class="compare-side" data-side="A">
         <div class="compare-side-header">
-          <span class="cs-title">JSON File A</span>
+          <span class="cs-title">JSON File A <span class="cs-subtitle">(original)</span></span>
           <div class="cs-actions">
             <span class="cs-count" id="compareCountA"></span>
             <button class="btn-sm" data-action="paste" title="Paste from clipboard">📋 Paste</button>
-            <label class="file-btn btn-sm" title="Upload a JSON file">📂 Upload</label>
+            <label class="file-btn btn-sm" title="Upload a .json or .txt file">📂 Upload</label>
             <input type="file" class="compare-file-input" accept=".json,.txt,application/json,text/plain">
-            <button class="btn-sm" data-action="format" title="Format / beautify">✨ Format</button>
-            <button class="btn-sm" data-action="validate" title="Validate JSON">✔️ Validate</button>
+            <button class="btn-sm" data-action="format" title="Beautify this side's text into indented JSON">✨ Format</button>
+            <button class="btn-sm" data-action="validate" title="Check this side's text and show how it will be interpreted">✔️ Validate</button>
           </div>
         </div>
-        <textarea class="compare-textarea" placeholder="Paste JSON A here, or upload/drop a file…" spellcheck="false"></textarea>
-        <div class="compare-side-status" id="compareStatusA"></div>
+        <textarea class="compare-textarea" placeholder="Paste JSON A here — strict JSON, JS-style objects, or key: value text all work — or upload/drop a file…" spellcheck="false"></textarea>
+        <div class="compare-side-status" id="compareStatusA">Nothing checked yet — paste text, then click Validate or Compare.</div>
       </section>
 
       <section class="compare-side" data-side="B">
         <div class="compare-side-header">
-          <span class="cs-title">JSON File B</span>
+          <span class="cs-title">JSON File B <span class="cs-subtitle">(changed)</span></span>
           <div class="cs-actions">
             <span class="cs-count" id="compareCountB"></span>
             <button class="btn-sm" data-action="paste" title="Paste from clipboard">📋 Paste</button>
-            <label class="file-btn btn-sm" title="Upload a JSON file">📂 Upload</label>
+            <label class="file-btn btn-sm" title="Upload a .json or .txt file">📂 Upload</label>
             <input type="file" class="compare-file-input" accept=".json,.txt,application/json,text/plain">
-            <button class="btn-sm" data-action="format" title="Format / beautify">✨ Format</button>
-            <button class="btn-sm" data-action="validate" title="Validate JSON">✔️ Validate</button>
+            <button class="btn-sm" data-action="format" title="Beautify this side's text into indented JSON">✨ Format</button>
+            <button class="btn-sm" data-action="validate" title="Check this side's text and show how it will be interpreted">✔️ Validate</button>
           </div>
         </div>
-        <textarea class="compare-textarea" placeholder="Paste JSON B here, or upload/drop a file…" spellcheck="false"></textarea>
-        <div class="compare-side-status" id="compareStatusB"></div>
+        <textarea class="compare-textarea" placeholder="Paste JSON B here — strict JSON, JS-style objects, or key: value text all work — or upload/drop a file…" spellcheck="false"></textarea>
+        <div class="compare-side-status" id="compareStatusB">Nothing checked yet — paste text, then click Validate or Compare.</div>
       </section>
     </div>
 
     <div class="compare-options">
-      <label title="Comma-separated key names to skip during comparison">
-        Ignore keys:
-        <input type="text" id="compareIgnoreKeys" placeholder="id, createdAt, updatedAt">
-      </label>
-      <label title="Default compares arrays by best-matching content, ignoring reordering">
-        <input type="checkbox" id="compareStrictArrayOrder"> Strict array order (index-based)
-      </label>
-      <label title="Treat string values as equal regardless of letter case">
-        <input type="checkbox" id="compareCaseInsensitive"> Case-insensitive strings
-      </label>
-      <label title="Allow small numeric differences to count as equal">
-        Number tolerance:
-        <input type="number" id="compareNumTolerance" value="0" min="0" step="any">
-      </label>
-      <label title="Automatically re-compare a few moments after you stop typing">
-        <input type="checkbox" id="compareAutoRun"> Auto-compare while typing
-      </label>
+      <div class="compare-options-group">
+        <div class="cog-title">🧩 Array Matching</div>
+        <label title="Objects in arrays that share the same value under one of these keys are treated as the same record — only their changed fields are flagged, instead of showing a full remove + add.">
+          <span class="cog-label">Match array items by key</span>
+          <input type="text" id="compareMatchKeys" placeholder="e.g. id, uuid" value="id, _id, uuid, key">
+          <span class="cog-hint">Records with a matching value here are compared field-by-field, even if reordered. Clear this to match array items purely by content/position instead.</span>
+        </label>
+        <label class="cog-checkbox-row" title="Compares array index 0 with index 0, index 1 with index 1, and so on — ignores the key match above.">
+          <input type="checkbox" id="compareStrictArrayOrder">
+          <span class="cog-label">Strict order (compare by position)</span>
+        </label>
+      </div>
+
+      <div class="compare-options-group">
+        <div class="cog-title">🔎 Value Matching</div>
+        <label title="Comma-separated key names to skip everywhere during comparison — useful for volatile fields.">
+          <span class="cog-label">Ignore keys</span>
+          <input type="text" id="compareIgnoreKeys" placeholder="e.g. createdAt, updatedAt">
+        </label>
+        <label class="cog-checkbox-row" title="Treat string values as equal regardless of letter case.">
+          <input type="checkbox" id="compareCaseInsensitive">
+          <span class="cog-label">Case-insensitive strings</span>
+        </label>
+        <label title="Numbers within this amount of each other are treated as equal — useful for rounding differences.">
+          <span class="cog-label">Number tolerance</span>
+          <input type="number" id="compareNumTolerance" value="0" min="0" step="any">
+        </label>
+      </div>
+
+      <div class="compare-options-group">
+        <div class="cog-title">⚡ Live Updates</div>
+        <label class="cog-checkbox-row" title="Automatically re-compare a few moments after you stop typing in either panel.">
+          <input type="checkbox" id="compareAutoRun">
+          <span class="cog-label">Auto-compare while typing</span>
+        </label>
+      </div>
     </div>
 
     <div class="compare-actions">
@@ -2319,7 +2372,8 @@
       ignoreKeys: new Set(document.getElementById('compareIgnoreKeys').value.split(',').map((s) => s.trim()).filter(Boolean)),
       strictArrayOrder: document.getElementById('compareStrictArrayOrder').checked,
       caseInsensitive: document.getElementById('compareCaseInsensitive').checked,
-      numTolerance: Math.abs(parseFloat(document.getElementById('compareNumTolerance').value)) || 0
+      numTolerance: Math.abs(parseFloat(document.getElementById('compareNumTolerance').value)) || 0,
+      matchKeys: document.getElementById('compareMatchKeys').value.split(',').map((s) => s.trim()).filter(Boolean)
     };
   }
 
@@ -2401,10 +2455,80 @@
     return pairs;
   }
 
+  function extractMatchKey(item, matchKeyNames) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    for (const k of matchKeyNames) {
+      if (Object.prototype.hasOwnProperty.call(item, k) && item[k] !== undefined && item[k] !== null) {
+        return k + '::' + JSON.stringify(item[k]);
+      }
+    }
+    return null;
+  }
+
+  function smartMatch(a, b, opts) {
+    return (a.length > MAX_LCS || b.length > MAX_LCS) ? indexPairs(a, b) : lcsMatch(a, b, opts);
+  }
+
+  // Matches array objects by an identifying field (e.g. "id") instead of by
+  // position or exact equality, so a record with one changed attribute is
+  // reported as "modified" rather than a whole removed+added pair. Items
+  // without a recognizable key (or a key not shared by the other side) fall
+  // back to smart content-based matching among themselves.
+  function keyedMatch(a, b, opts) {
+    const matchKeyNames = opts.matchKeys;
+    const bBuckets = new Map();
+    const bIdentity = new Array(b.length);
+    b.forEach((item, i) => {
+      const id = extractMatchKey(item, matchKeyNames);
+      bIdentity[i] = id;
+      if (id !== null) {
+        if (!bBuckets.has(id)) bBuckets.set(id, []);
+        bBuckets.get(id).push(i);
+      }
+    });
+
+    const consumedB = new Array(b.length).fill(false);
+    const pairs = [];
+    const leftoverAIdx = [];
+
+    a.forEach((item, ai) => {
+      const id = extractMatchKey(item, matchKeyNames);
+      if (id === null) { leftoverAIdx.push(ai); return; }
+      const bucket = bBuckets.get(id);
+      if (bucket && bucket.length) {
+        const bi = bucket.shift();
+        consumedB[bi] = true;
+        pairs.push({ ai, bi });
+      } else {
+        pairs.push({ ai, bi: -1 });
+      }
+    });
+
+    const leftoverBIdx = [];
+    b.forEach((item, bi) => {
+      if (consumedB[bi]) return;
+      if (bIdentity[bi] === null) { leftoverBIdx.push(bi); return; }
+      pairs.push({ ai: -1, bi });
+    });
+
+    if (leftoverAIdx.length || leftoverBIdx.length) {
+      const leftoverA = leftoverAIdx.map((i) => a[i]);
+      const leftoverB = leftoverBIdx.map((i) => b[i]);
+      smartMatch(leftoverA, leftoverB, opts).forEach((p) => {
+        pairs.push({
+          ai: p.ai === -1 ? -1 : leftoverAIdx[p.ai],
+          bi: p.bi === -1 ? -1 : leftoverBIdx[p.bi]
+        });
+      });
+    }
+
+    return pairs;
+  }
+
   function matchArrayIndices(a, b, opts) {
     if (opts.strictArrayOrder) return indexPairs(a, b);
-    if (a.length > MAX_LCS || b.length > MAX_LCS) return indexPairs(a, b);
-    return lcsMatch(a, b, opts);
+    if (opts.matchKeys && opts.matchKeys.length) return keyedMatch(a, b, opts);
+    return smartMatch(a, b, opts);
   }
 
   function finalizeContainerStatus(node) {
@@ -2580,7 +2704,7 @@
       return { present: true, html: '<span class="diff-punct">' + bracket + '</span>' + commaHtml };
     }
     return {
-      path: node.path + ' close', depth, ancestors, isOpen: false, status,
+      path: node.path + '/close', depth, ancestors, isOpen: false, status,
       a: sideHtml(node.aMissing), b: sideHtml(node.bMissing),
       filterStatuses: node.subtreeStatuses, hasDiff: node.hasDiff, searchText: ''
     };
@@ -2980,8 +3104,8 @@
     sides.B.textarea.value = '';
     updateSideCount('A');
     updateSideCount('B');
-    setSideStatus('A', '', '');
-    setSideStatus('B', '', '');
+    setSideStatus('A', 'Nothing checked yet — paste text, then click Validate or Compare.', '');
+    setSideStatus('B', 'Nothing checked yet — paste text, then click Validate or Compare.', '');
     hideWarning();
     lastCompare = null;
     currentRows = [];
@@ -3002,8 +3126,8 @@
     sides.B.textarea.value = tmp;
     updateSideCount('A');
     updateSideCount('B');
-    setSideStatus('A', '', '');
-    setSideStatus('B', '', '');
+    validateSide('A');
+    validateSide('B');
     document.getElementById('compareDownloadBtn').disabled = true;
     lastCompare = null;
   });
