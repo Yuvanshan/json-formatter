@@ -392,6 +392,12 @@
     gap: 4px;
   }
 
+  #editModeBtn.active {
+    background: var(--active-bg);
+    border-color: var(--active-border);
+    color: var(--primary-bg);
+  }
+
   .view-toggle button.active {
     background: var(--active-bg);
     border-color: var(--active-border);
@@ -428,15 +434,32 @@
   }
 
   /* ===== Tree CRUD editing ===== */
-  .node-header-row { display: inline; }
-  .row-actions, .tree-add-btn {
+  /* Read-only by default — edit controls only exist (not just hide) unless
+     "Enable Edit" is on, so Tab order and screen readers skip them too. */
+  .row-actions, .tree-add-btn { display: none; }
+  #output.tree-edit-mode .row-actions, #output.tree-edit-mode .tree-add-btn {
+    display: inline-flex;
     opacity: 0;
     transition: opacity .12s ease;
   }
-  .leaf-row:hover .row-actions, .leaf-row:focus-within .row-actions,
-  .node-header-row:hover .tree-add-btn, .node-header-row:focus-within .tree-add-btn {
+  #output.tree-edit-mode .leaf-row:hover .row-actions,
+  #output.tree-edit-mode .leaf-row:focus-within .row-actions,
+  #output.tree-edit-mode .node-header-row:hover .tree-add-btn,
+  #output.tree-edit-mode .node-header-row:focus-within .tree-add-btn {
     opacity: 1;
   }
+  /* The "recommendation" cue: while Edit Mode is on, every editable scalar
+     gets a soft dashed underline so it reads as editable before the user
+     even hovers, rather than relying purely on hover-discovery. */
+  #output.tree-edit-mode .leaf-row .node-string,
+  #output.tree-edit-mode .leaf-row .node-number,
+  #output.tree-edit-mode .leaf-row .node-boolean,
+  #output.tree-edit-mode .leaf-row .node-null {
+    border-bottom: 1px dashed currentColor;
+    opacity: .92;
+    cursor: text;
+  }
+  .node-header-row { display: inline; }
   .row-action-btn {
     background: none;
     border: none;
@@ -507,6 +530,65 @@
     white-space: nowrap;
     flex: 1;
   }
+
+  /* ===== Explorer: mode-tabbed search, query results, Node Inspector ===== */
+  #explorerModeBtn.active {
+    background: var(--active-bg);
+    border-color: var(--active-border);
+    color: var(--primary-bg);
+  }
+
+  .search-mode-tabs { display: flex; gap: 2px; flex: 0 0 auto; }
+  .smt-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .smt-btn:hover { background: var(--btn-hover-bg); }
+  .smt-btn.active { background: var(--active-bg); border-color: var(--active-border); color: var(--primary-bg); font-weight: 600; }
+
+  .query-result-row {
+    padding: 8px 14px;
+    font-size: 11.5px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+    color: var(--text-muted);
+  }
+  .query-result-row[hidden] { display: none; }
+  .query-result-row .qr-error { color: var(--status-err); }
+  .query-result-row .qr-ok { color: var(--status-ok); }
+  .query-result-row .qr-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+  .node-inspector {
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+  .node-inspector[hidden] { display: none; }
+  .ni-breadcrumb {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .ni-breadcrumb .ni-crumb { cursor: pointer; color: var(--primary-bg); }
+  .ni-breadcrumb .ni-crumb:hover { text-decoration: underline; }
+  .ni-breadcrumb .ni-crumb-sep { color: var(--text-faint); margin: 0 3px; }
+  .ni-sync-note { font-size: 10.5px; color: #b3691a; margin-bottom: 6px; }
+  :root[data-theme="dark"] .ni-sync-note { color: #e0a83f; }
+  .ni-sync-note[hidden] { display: none; }
+  .ni-body { display: grid; grid-template-columns: 70px 1fr; gap: 4px 10px; margin-bottom: 8px; }
+  .ni-label { color: var(--text-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; padding-top: 1px; }
+  .ni-value { color: var(--text); word-break: break-word; }
+  .ni-value.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+  .ni-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
   /* History list */
   #historyList {
@@ -1443,6 +1525,8 @@
       <span>Result</span>
       <div class="panel-header-actions">
         <button class="btn-sm" id="resultCopyBtn" title="Copy formatted JSON">📋 Copy</button>
+        <button class="btn-sm" id="editModeBtn" title="Enable inline editing of values, keys, and array items in Tree view" aria-pressed="false">🔒 Enable Edit</button>
+        <button class="btn-sm" id="explorerModeBtn" title="Enable JSONPath / JSON Pointer queries and a richer node inspector" aria-pressed="false">🧭 Enable Explorer</button>
         <div class="view-toggle">
           <button id="treeViewBtn" class="active">Tree</button>
           <button id="plainViewBtn">Plain</button>
@@ -1451,6 +1535,11 @@
     </div>
 
     <div class="search-row" id="searchRow">
+      <div class="search-mode-tabs" id="searchModeTabs" hidden role="tablist" aria-label="Search mode">
+        <button class="smt-btn active" data-mode="search" role="tab" aria-selected="true">Search</button>
+        <button class="smt-btn" data-mode="jsonpath" role="tab" aria-selected="false">JSONPath</button>
+        <button class="smt-btn" data-mode="pointer" role="tab" aria-selected="false">Pointer</button>
+      </div>
       <input type="text" id="searchInput" placeholder="🔍 Search keys or values…">
       <span class="search-count" id="searchCount"></span>
       <button class="btn-sm" id="prevMatchBtn" title="Previous match (Shift+Enter)">↑</button>
@@ -1460,11 +1549,33 @@
       <button class="btn-sm" id="collapseAllBtn">Collapse all</button>
     </div>
 
+    <div class="query-result-row" id="queryResultRow" hidden></div>
+
     <div id="output" class="empty">Formatted or opened JSON will appear here.</div>
 
     <div class="path-bar" id="pathBar">
       <span id="pathText"></span>
       <button class="btn-sm" id="copyPathBtn">Copy path</button>
+    </div>
+
+    <div class="node-inspector" id="nodeInspector" hidden>
+      <div class="ni-breadcrumb" id="niBreadcrumb"></div>
+      <div class="ni-sync-note" id="niSyncNote" hidden>⚠ Editor differs from the last Format — click Format to enable editor navigation.</div>
+      <div class="ni-body">
+        <div class="ni-row"><span class="ni-label">Key</span><span class="ni-value" id="niKey"></span></div>
+        <div class="ni-row"><span class="ni-label">Type</span><span class="ni-value" id="niType"></span></div>
+        <div class="ni-row"><span class="ni-label">Depth</span><span class="ni-value" id="niDepth"></span></div>
+        <div class="ni-row"><span class="ni-label">JSONPath</span><span class="ni-value mono" id="niPath"></span></div>
+        <div class="ni-row"><span class="ni-label">Pointer</span><span class="ni-value mono" id="niPointer"></span></div>
+        <div class="ni-row" id="niValueRow"><span class="ni-label">Value</span><span class="ni-value mono" id="niValue"></span></div>
+      </div>
+      <div class="ni-actions">
+        <button class="btn-sm" id="niCopyPathBtn">Copy JSONPath</button>
+        <button class="btn-sm" id="niCopyPointerBtn">Copy Pointer</button>
+        <button class="btn-sm" id="niCopyValueBtn">Copy Value</button>
+        <button class="btn-sm" id="niExtractBtn">Extract</button>
+        <button class="btn-sm" id="niOpenEditorBtn">Open in Editor</button>
+      </div>
     </div>
   </section>
 
@@ -1758,6 +1869,10 @@
   const VALIDATE_DEBOUNCE_MS = 220;
   const findState = { caseSensitive: false, wholeWord: false, regex: false, matches: [], index: -1 };
   let findMarks = [];
+  let explorerModeEnabled = false;
+  let searchMode = 'search';
+  let queryResultLimit = 10000;
+  let selectedInspectorPath = null;
 
   // ---------- History (IndexedDB, migrated from the old localStorage blob) ----------
   // History entries can hold large content/formatted strings, which is
@@ -2311,7 +2426,7 @@
         skipWs();
         if (text[i] !== ':') return false;
         i++;
-        const childPath = path + '.' + (isValidIdentifier(key) ? key : JSON.stringify(key));
+        const childPath = isValidIdentifier(key) ? (path + '.' + key) : (path + '[' + JSON.stringify(key) + ']');
         if (!parseValue(childPath)) return false;
         skipWs();
         if (text[i] === ',') { i++; continue; }
@@ -2320,7 +2435,7 @@
       }
       seen.forEach((count, key) => {
         if (count > 1) {
-          duplicates.push({ path: path + '.' + (isValidIdentifier(key) ? key : JSON.stringify(key)), key: key, occurrences: count });
+          duplicates.push({ path: isValidIdentifier(key) ? (path + '.' + key) : (path + '[' + JSON.stringify(key) + ']'), key: key, occurrences: count });
         }
       });
       return true;
@@ -2909,6 +3024,120 @@
     return v === 'tab' ? '\t' : Number(v);
   }
 
+  // ---------- Editor <-> Tree navigation (exact offset mapping) ----------
+  // Produces text byte-identical to JSON.stringify(value, null, indent)
+  // while also recording each path's character range as it's emitted, so
+  // a tree node can be mapped to precisely where its value sits in the
+  // editor. Computed fresh on demand rather than threaded through every
+  // existing lastFormatted call site — correctness only requires that this
+  // text matches the editor's CURRENT content at the moment navigation is
+  // attempted (checked by the caller), not that it's the same object that
+  // originally produced lastFormatted.
+  function stringifyWithMap(value, indent) {
+    const ranges = new Map();
+    let out = '';
+    const useIndent = indent !== undefined && indent !== '' && indent !== 0;
+    const unit = typeof indent === 'number' ? ' '.repeat(indent) : (typeof indent === 'string' ? indent : '');
+    function pad(depth) { return useIndent ? unit.repeat(depth) : ''; }
+    function nl() { return useIndent ? '\n' : ''; }
+    function write(v, path, depth) {
+      const start = out.length;
+      if (v === null || v === undefined) {
+        out += 'null';
+      } else if (typeof v === 'boolean') {
+        out += String(v);
+      } else if (typeof v === 'number') {
+        out += Number.isFinite(v) ? String(v) : 'null';
+      } else if (typeof v === 'string') {
+        out += JSON.stringify(v);
+      } else if (Array.isArray(v)) {
+        if (!v.length) {
+          out += '[]';
+        } else {
+          out += '[' + nl();
+          v.forEach((item, idx) => {
+            out += pad(depth + 1);
+            write(item, path + '[' + idx + ']', depth + 1);
+            if (idx < v.length - 1) out += ',';
+            out += nl();
+          });
+          out += pad(depth) + ']';
+        }
+      } else if (typeof v === 'object') {
+        const keys = Object.keys(v).filter((k) => v[k] !== undefined && typeof v[k] !== 'function');
+        if (!keys.length) {
+          out += '{}';
+        } else {
+          out += '{' + nl();
+          keys.forEach((k, idx) => {
+            out += pad(depth + 1) + JSON.stringify(k) + ':' + (useIndent ? ' ' : '');
+            const childPath = isValidIdentifier(k) ? (path + '.' + k) : (path + '[' + JSON.stringify(k) + ']');
+            write(v[k], childPath, depth + 1);
+            if (idx < keys.length - 1) out += ',';
+            out += nl();
+          });
+          out += pad(depth) + '}';
+        }
+      } else {
+        out += 'null';
+      }
+      ranges.set(path, { start: start, end: out.length });
+    }
+    write(value, '$', 0);
+    return { text: out, ranges: ranges };
+  }
+
+  // Returns the path->range map only if it's provably in sync with the
+  // editor's current text — never a best guess.
+  function computeOffsetMapIfSynced() {
+    if (lastParsed === undefined) return null;
+    const result = stringifyWithMap(lastParsed, currentIndent());
+    if (result.text !== getInputValue()) return null;
+    return result.ranges;
+  }
+
+  // Node -> Editor: moves the cursor to that path's value and flashes it.
+  function navigateEditorToPath(path) {
+    const ranges = computeOffsetMapIfSynced();
+    if (!ranges || !ranges.has(path)) return false;
+    const range = ranges.get(path);
+    const from = cm.posFromIndex(range.start);
+    const to = cm.posFromIndex(range.end);
+    cm.focus();
+    cm.setSelection(from, to);
+    cm.scrollIntoView({ from: from, to: to }, 80);
+    cm.addLineClass(from.line, 'background', 'cm-error-line-flash');
+    setTimeout(() => cm.removeLineClass(from.line, 'background', 'cm-error-line-flash'), 700);
+    return true;
+  }
+
+  // Editor -> Tree: finds the smallest (most specific) range containing the
+  // cursor and selects that node in the tree, debounced since it runs on
+  // every cursor move.
+  let editorToTreeTimer = null;
+  function scheduleEditorToTreeSync() {
+    if (!explorerModeEnabled) return;
+    clearTimeout(editorToTreeTimer);
+    editorToTreeTimer = setTimeout(syncTreeToEditorCursor, 150);
+  }
+  function syncTreeToEditorCursor() {
+    if (!explorerModeEnabled || currentView !== 'tree') return;
+    const ranges = computeOffsetMapIfSynced();
+    if (!ranges) return;
+    const offset = cm.indexFromPos(cm.getCursor());
+    let best = null;
+    ranges.forEach((range, path) => {
+      if (offset >= range.start && offset <= range.end) {
+        if (!best || (range.end - range.start) < (best.range.end - best.range.start)) best = { path: path, range: range };
+      }
+    });
+    if (best && best.path !== selectedInspectorPath) {
+      const map = buildPathElementMap();
+      const el = map.get(best.path);
+      if (el) { expandAncestors(el); updateInspector(best.path, el); }
+    }
+  }
+
   function formatJSON(sourceName, save) {
     if (save === undefined) save = true;
     const raw = getInputValue();
@@ -3004,12 +3233,136 @@
   }
 
   function showPath(path, el) {
-    pathBar.classList.add('show');
-    pathText.textContent = path;
+    if (explorerModeEnabled) {
+      pathBar.classList.remove('show');
+      updateInspector(path, el);
+    } else {
+      nodeInspector.hidden = true;
+      pathBar.classList.add('show');
+      pathText.textContent = path;
+    }
     if (el) {
       el.classList.add('flash');
       setTimeout(() => el.classList.remove('flash'), 500);
     }
+  }
+
+  // ---------- Node Inspector (Explorer Mode) ----------
+  const nodeInspector = document.getElementById('nodeInspector');
+  const niBreadcrumb = document.getElementById('niBreadcrumb');
+  const niKey = document.getElementById('niKey');
+  const niType = document.getElementById('niType');
+  const niDepth = document.getElementById('niDepth');
+  const niPath = document.getElementById('niPath');
+  const niPointer = document.getElementById('niPointer');
+  const niValueRow = document.getElementById('niValueRow');
+  const niValue = document.getElementById('niValue');
+  const niSyncNote = document.getElementById('niSyncNote');
+
+  function previewValueText(value) {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return value.length ? ('[' + value.length + ' items]') : '[]';
+    if (typeof value === 'object') { const n = Object.keys(value).length; return n ? ('{' + n + ' keys}') : '{}'; }
+    if (typeof value === 'string') return value.length > 300 ? (JSON.stringify(value.slice(0, 300)) + '… (' + value.length + ' chars total)') : JSON.stringify(value);
+    return String(value);
+  }
+
+  function selectNodeByPath(path) {
+    const map = buildPathElementMap();
+    const el = map.get(path);
+    if (!el) { if (window.showToast) window.showToast('That node is not in the current tree.', 'warning'); return; }
+    expandAncestors(el);
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    showPath(path, el);
+  }
+
+  function updateInspector(path, el) {
+    if (lastParsed === undefined) return;
+    const value = path === '$' ? lastParsed : getAtPath(lastParsed, path);
+    const segments = parsePath(path);
+    selectedInspectorPath = path;
+
+    niBreadcrumb.innerHTML = '';
+    const rootCrumb = document.createElement('span');
+    rootCrumb.className = 'ni-crumb';
+    rootCrumb.textContent = 'root';
+    rootCrumb.addEventListener('click', () => selectNodeByPath('$'));
+    niBreadcrumb.appendChild(rootCrumb);
+    let acc = '$';
+    segments.forEach((seg) => {
+      acc = seg.type === 'index' ? (acc + '[' + seg.value + ']') : (isValidIdentifier(seg.value) ? (acc + '.' + seg.value) : (acc + '[' + JSON.stringify(seg.value) + ']'));
+      const sep = document.createElement('span');
+      sep.className = 'ni-crumb-sep';
+      sep.textContent = '›';
+      niBreadcrumb.appendChild(sep);
+      const crumb = document.createElement('span');
+      crumb.className = 'ni-crumb';
+      crumb.textContent = String(seg.value);
+      const crumbPath = acc;
+      crumb.addEventListener('click', () => selectNodeByPath(crumbPath));
+      niBreadcrumb.appendChild(crumb);
+    });
+
+    const lastSeg = segments[segments.length - 1];
+    niKey.textContent = lastSeg ? String(lastSeg.value) : '(root)';
+    niType.textContent = resultTypeLabel(value);
+    niDepth.textContent = String(segments.length);
+    niPath.textContent = path;
+    niPointer.textContent = pathToPointer(path);
+    const isScalar = value === null || ['string', 'number', 'boolean'].includes(typeof value);
+    niValueRow.style.display = '';
+    niValue.textContent = previewValueText(value);
+    nodeInspector.hidden = false;
+
+    const navigated = navigateEditorToPath(path);
+    niSyncNote.hidden = navigated;
+  }
+
+  document.getElementById('niCopyPathBtn').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(niPath.textContent); if (window.showToast) window.showToast('Copied JSONPath.', 'success'); }
+    catch (e) { if (window.showToast) window.showToast('Could not copy.', 'error'); }
+  });
+  document.getElementById('niCopyPointerBtn').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(niPointer.textContent); if (window.showToast) window.showToast('Copied JSON Pointer.', 'success'); }
+    catch (e) { if (window.showToast) window.showToast('Could not copy.', 'error'); }
+  });
+  document.getElementById('niCopyValueBtn').addEventListener('click', async () => {
+    if (!selectedInspectorPath || lastParsed === undefined) return;
+    const value = selectedInspectorPath === '$' ? lastParsed : getAtPath(lastParsed, selectedInspectorPath);
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    try { await navigator.clipboard.writeText(text); if (window.showToast) window.showToast('Copied value.', 'success'); }
+    catch (e) { if (window.showToast) window.showToast('Could not copy.', 'error'); }
+  });
+  document.getElementById('niExtractBtn').addEventListener('click', () => {
+    if (!selectedInspectorPath || lastParsed === undefined) return;
+    const value = selectedInspectorPath === '$' ? lastParsed : getAtPath(lastParsed, selectedInspectorPath);
+    extractedNode = { path: selectedInspectorPath, value: value };
+    if (window.showToast) window.showToast('Extracted ' + selectedInspectorPath + ' — use "Open in Editor" to view it as its own document.', 'success');
+  });
+  document.getElementById('niOpenEditorBtn').addEventListener('click', () => {
+    if (!selectedInspectorPath || lastParsed === undefined) return;
+    const value = selectedInspectorPath === '$' ? lastParsed : getAtPath(lastParsed, selectedInspectorPath);
+    openExtractedInEditor(selectedInspectorPath, value);
+  });
+
+  // Extracting a node never overwrites the current document automatically —
+  // it opens as a clearly separate temporary buffer the user can discard
+  // (Undo) or keep, per the spec's explicit "do not overwrite" requirement.
+  let extractedNode = null;
+  let preExtractSnapshot = null;
+  function openExtractedInEditor(path, value) {
+    preExtractSnapshot = { text: getInputValue(), formatted: lastFormatted, parsed: lastParsed };
+    const text = JSON.stringify(value, null, currentIndent());
+    setInputValue(text);
+    formatJSON('Extracted ' + path, false);
+    setUndoableStatus('Opened ' + path + ' as a temporary document.', () => {
+      if (!preExtractSnapshot) return;
+      setInputValue(preExtractSnapshot.text);
+      lastFormatted = preExtractSnapshot.formatted;
+      lastParsed = preExtractSnapshot.parsed;
+      if (lastParsed !== undefined) { output.className = ''; renderOutput(); }
+      setStatus('Restored original document.', true);
+    });
   }
 
   // Single place that (un)collapses a tree node, animated or not. Used by
@@ -3071,7 +3424,13 @@
     const segments = [];
     let i = 1; // skip leading '$'
     while (i < pathStr.length) {
-      if (pathStr[i] === '[') {
+      if (pathStr[i] === '[' && pathStr[i + 1] === '"') {
+        // Bracket notation for non-identifier keys, e.g. $["first-name"].
+        let j = i + 2;
+        while (j < pathStr.length && pathStr[j] !== '"') { if (pathStr[j] === '\\') j++; j++; }
+        segments.push({ type: 'key', value: JSON.parse(pathStr.slice(i + 1, j + 1)) });
+        i = j + 2; // consume closing '"' and ']'
+      } else if (pathStr[i] === '[') {
         const end = pathStr.indexOf(']', i);
         segments.push({ type: 'index', value: Number(pathStr.slice(i + 1, end)) });
         i = end + 1;
@@ -3174,6 +3533,307 @@
       return { ok: true };
     }
     return { ok: false, reason: 'This value is not an object or array.' };
+  }
+
+  // ---------- JSON Pointer (RFC 6901) ----------
+  // Path segments already know whether each step is an array 'index' or an
+  // object 'key' (parsePath/buildTree's childPath both tag them), so
+  // converting to a pointer is unambiguous in this direction.
+  function segmentsToPointer(segments) {
+    if (!segments.length) return '';
+    return '/' + segments.map((s) => String(s.value).replace(/~/g, '~0').replace(/\//g, '~1')).join('/');
+  }
+
+  function pathToPointer(pathStr) {
+    return segmentsToPointer(parsePath(pathStr));
+  }
+
+  // The reverse direction is genuinely ambiguous from syntax alone — a
+  // pointer segment like "/0" could mean array index 0 or the object key
+  // "0" (RFC 6901 doesn't disambiguate). This resolves against the actual
+  // value as it walks, so the ambiguity is settled by what's really there
+  // rather than guessed from the pointer's text.
+  function resolvePointer(root, pointer) {
+    if (pointer === '' || pointer == null) return { found: true, value: root, path: '$' };
+    if (pointer[0] !== '/') return { found: false, reason: 'A JSON Pointer must be empty or start with "/".' };
+    const tokens = pointer.split('/').slice(1).map((t) => t.replace(/~1/g, '/').replace(/~0/g, '~'));
+    let cur = root;
+    let path = '$';
+    for (const token of tokens) {
+      if (cur === null || typeof cur !== 'object') return { found: false, reason: 'Path segment "' + token + '" not found (reached a non-object value first).' };
+      if (Array.isArray(cur)) {
+        if (!/^\d+$/.test(token) || Number(token) >= cur.length) return { found: false, reason: 'Array index "' + token + '" is out of range.' };
+        cur = cur[Number(token)];
+        path += '[' + token + ']';
+      } else {
+        if (!Object.prototype.hasOwnProperty.call(cur, token)) return { found: false, reason: 'Key "' + token + '" was not found at this level.' };
+        cur = cur[token];
+        path += isValidIdentifier(token) ? ('.' + token) : ('[' + JSON.stringify(token) + ']');
+      }
+    }
+    return { found: true, value: cur, path: path };
+  }
+
+  // ---------- JSONPath query engine (hand-written — no eval/Function) ----------
+  // Supports: $, .name, ["name"]/['name'], [*]/.* , [N], ..name / ..* / ..
+  // (recursive descent), and [?(@.key OP literal)] filters with
+  // == != > < >= <= combined by && / ||. Explicitly not supported: script
+  // expressions, unions, slices — a query using them fails to parse with a
+  // clear message rather than silently doing the wrong thing.
+  function parseJsonPathSteps(query) {
+    const steps = [];
+    let i = 0;
+    const n = query.length;
+    function fail(msg) { throw { message: msg, index: i }; }
+    function skipWs() { while (i < n && /\s/.test(query[i])) i++; }
+    if (query[i] !== '$') fail('A JSONPath query must start with "$"');
+    i++;
+    while (i < n) {
+      if (query[i] === '.' && query[i + 1] === '.') {
+        i += 2;
+        steps.push({ type: 'recursive' });
+        if (query[i] === '*') { steps.push({ type: 'wildcard' }); i++; }
+        else if (/[A-Za-z0-9_$]/.test(query[i] || '')) {
+          let j = i;
+          while (j < n && /[A-Za-z0-9_$]/.test(query[j])) j++;
+          steps.push({ type: 'prop', name: query.slice(i, j) });
+          i = j;
+        }
+        continue;
+      }
+      if (query[i] === '.') {
+        i++;
+        if (query[i] === '*') { steps.push({ type: 'wildcard' }); i++; continue; }
+        let j = i;
+        while (j < n && /[A-Za-z0-9_$]/.test(query[j])) j++;
+        if (j === i) fail('Expected a property name after "."');
+        steps.push({ type: 'prop', name: query.slice(i, j) });
+        i = j;
+        continue;
+      }
+      if (query[i] === '[') {
+        i++;
+        skipWs();
+        if (query[i] === '*') {
+          i++; skipWs();
+          if (query[i] !== ']') fail('Expected "]" after "*"');
+          i++;
+          steps.push({ type: 'wildcard' });
+          continue;
+        }
+        if (query[i] === '?') {
+          i++; skipWs();
+          if (query[i] !== '(') fail('Expected "(" after "?"');
+          i++;
+          const exprStart = i;
+          let depth = 1;
+          while (i < n && depth > 0) {
+            if (query[i] === '(') depth++;
+            else if (query[i] === ')') depth--;
+            if (depth > 0) i++;
+          }
+          if (depth !== 0) fail('Unclosed filter — missing ")"');
+          const exprStr = query.slice(exprStart, i);
+          i++; // consume ')'
+          skipWs();
+          if (query[i] !== ']') fail('Expected "]" to close filter');
+          i++;
+          steps.push({ type: 'filter', expr: parseFilterExpr(exprStr) });
+          continue;
+        }
+        if (query[i] === '"' || query[i] === "'") {
+          const quote = query[i];
+          let j = i + 1;
+          while (j < n && query[j] !== quote) { if (query[j] === '\\') j++; j++; }
+          if (j >= n) fail('Unterminated string in brackets');
+          const name = query.slice(i + 1, j);
+          i = j + 1;
+          skipWs();
+          if (query[i] !== ']') fail('Expected "]"');
+          i++;
+          steps.push({ type: 'prop', name: name });
+          continue;
+        }
+        let j = i;
+        while (j < n && /[0-9-]/.test(query[j])) j++;
+        if (j === i) fail('Unexpected character "' + (query[i] || 'end of input') + '" inside brackets');
+        const idx = Number(query.slice(i, j));
+        i = j;
+        skipWs();
+        if (query[i] !== ']') fail('Unclosed bracket — expected "]"');
+        i++;
+        steps.push({ type: 'index', value: idx });
+        continue;
+      }
+      fail('Unexpected character "' + query[i] + '"');
+    }
+    return steps;
+  }
+
+  function parseFilterExpr(exprStr) {
+    let i = 0;
+    const n = exprStr.length;
+    function skipWs() { while (i < n && /\s/.test(exprStr[i])) i++; }
+    function parseOr() {
+      let left = parseAnd();
+      skipWs();
+      while (exprStr.slice(i, i + 2) === '||') { i += 2; left = { type: 'or', left: left, right: parseAnd() }; skipWs(); }
+      return left;
+    }
+    function parseAnd() {
+      let left = parseComparison();
+      skipWs();
+      while (exprStr.slice(i, i + 2) === '&&') { i += 2; left = { type: 'and', left: left, right: parseComparison() }; skipWs(); }
+      return left;
+    }
+    function parseComparison() {
+      skipWs();
+      if (exprStr[i] === '(') {
+        i++;
+        const inner = parseOr();
+        skipWs();
+        if (exprStr[i] === ')') i++;
+        return inner;
+      }
+      const left = parseOperand();
+      skipWs();
+      const ops = ['>=', '<=', '==', '!=', '>', '<'];
+      const op = ops.find((o) => exprStr.slice(i, i + o.length) === o);
+      if (!op) return { type: 'truthy', operand: left };
+      i += op.length;
+      const right = parseOperand();
+      return { type: 'compare', op: op, left: left, right: right };
+    }
+    function parseOperand() {
+      skipWs();
+      if (exprStr[i] === '@') {
+        i++;
+        const path = [];
+        while (exprStr[i] === '.') {
+          i++;
+          let j = i;
+          while (j < n && /[A-Za-z0-9_$]/.test(exprStr[j])) j++;
+          path.push(exprStr.slice(i, j));
+          i = j;
+        }
+        return { type: 'field', path: path };
+      }
+      if (exprStr[i] === '"' || exprStr[i] === "'") {
+        const quote = exprStr[i]; i++;
+        let j = i;
+        while (j < n && exprStr[j] !== quote) j++;
+        const s = exprStr.slice(i, j);
+        i = j + 1;
+        return { type: 'literal', value: s };
+      }
+      if (exprStr.slice(i, i + 4) === 'true') { i += 4; return { type: 'literal', value: true }; }
+      if (exprStr.slice(i, i + 5) === 'false') { i += 5; return { type: 'literal', value: false }; }
+      if (exprStr.slice(i, i + 4) === 'null') { i += 4; return { type: 'literal', value: null }; }
+      let j = i;
+      while (j < n && /[0-9.\-]/.test(exprStr[j])) j++;
+      if (j > i) { const num = Number(exprStr.slice(i, j)); i = j; return { type: 'literal', value: num }; }
+      throw { message: 'Invalid filter expression near "' + exprStr.slice(i) + '"', index: i };
+    }
+    return parseOr();
+  }
+
+  function resolveFilterOperand(node, candidateValue) {
+    if (node.type === 'literal') return node.value;
+    if (node.type === 'field') {
+      let cur = candidateValue;
+      for (const key of node.path) {
+        if (cur == null) return undefined;
+        cur = cur[key];
+      }
+      return cur;
+    }
+    return undefined;
+  }
+
+  function evaluateFilterNode(node, candidateValue) {
+    switch (node.type) {
+      case 'and': return evaluateFilterNode(node.left, candidateValue) && evaluateFilterNode(node.right, candidateValue);
+      case 'or': return evaluateFilterNode(node.left, candidateValue) || evaluateFilterNode(node.right, candidateValue);
+      case 'truthy': return !!resolveFilterOperand(node.operand, candidateValue);
+      case 'compare': {
+        const l = resolveFilterOperand(node.left, candidateValue);
+        const r = resolveFilterOperand(node.right, candidateValue);
+        switch (node.op) {
+          case '==': return l === r;
+          case '!=': return l !== r;
+          case '>': return l > r;
+          case '<': return l < r;
+          case '>=': return l >= r;
+          case '<=': return l <= r;
+          default: return false;
+        }
+      }
+      default: return false;
+    }
+  }
+
+  function jsonPathChildPath(basePath, key, isArrayKey) {
+    if (isArrayKey) return basePath + '[' + key + ']';
+    return isValidIdentifier(key) ? (basePath + '.' + key) : (basePath + '[' + JSON.stringify(key) + ']');
+  }
+
+  const JSONPATH_NODE_VISIT_CAP = 200000;
+
+  function collectDescendants(node, out, counter) {
+    out.push(node);
+    counter.n++;
+    if (counter.n > JSONPATH_NODE_VISIT_CAP) throw { message: 'Query touched too many nodes (recursive descent on a very large document) — try a more specific path.' };
+    const v = node.value;
+    if (Array.isArray(v)) {
+      v.forEach((item, idx) => collectDescendants({ value: item, path: jsonPathChildPath(node.path, idx, true) }, out, counter));
+    } else if (v !== null && typeof v === 'object') {
+      Object.keys(v).forEach((k) => collectDescendants({ value: v[k], path: jsonPathChildPath(node.path, k, false) }, out, counter));
+    }
+  }
+
+  // Returns { results: [{value,path}], truncated, totalFound }. Never
+  // mutates root — every step only reads from the existing value and
+  // builds new path strings; nothing here can change source JSON (per the
+  // spec's explicit "query operations must never mutate source data" rule).
+  function evaluateJsonPath(root, query, limit) {
+    const steps = parseJsonPathSteps(query); // throws with {message, index} on bad syntax
+    let frontier = [{ value: root, path: '$' }];
+    const counter = { n: 1 };
+    steps.forEach((step) => {
+      const next = [];
+      if (step.type === 'recursive') {
+        frontier.forEach((node) => collectDescendants(node, next, counter));
+        frontier = next;
+        return;
+      }
+      frontier.forEach((node) => {
+        const v = node.value;
+        counter.n++;
+        if (counter.n > JSONPATH_NODE_VISIT_CAP) throw { message: 'Query touched too many nodes — try a more specific path.' };
+        if (step.type === 'wildcard') {
+          if (Array.isArray(v)) v.forEach((item, idx) => next.push({ value: item, path: jsonPathChildPath(node.path, idx, true) }));
+          else if (v !== null && typeof v === 'object') Object.keys(v).forEach((k) => next.push({ value: v[k], path: jsonPathChildPath(node.path, k, false) }));
+        } else if (step.type === 'prop') {
+          if (v !== null && typeof v === 'object' && !Array.isArray(v) && Object.prototype.hasOwnProperty.call(v, step.name)) {
+            next.push({ value: v[step.name], path: jsonPathChildPath(node.path, step.name, false) });
+          }
+        } else if (step.type === 'index') {
+          if (Array.isArray(v)) {
+            const idx = step.value < 0 ? v.length + step.value : step.value;
+            if (idx >= 0 && idx < v.length) next.push({ value: v[idx], path: jsonPathChildPath(node.path, idx, true) });
+          }
+        } else if (step.type === 'filter') {
+          if (Array.isArray(v)) {
+            v.forEach((item, idx) => { if (evaluateFilterNode(step.expr, item)) next.push({ value: item, path: jsonPathChildPath(node.path, idx, true) }); });
+          } else if (v !== null && typeof v === 'object') {
+            Object.keys(v).forEach((k) => { if (evaluateFilterNode(step.expr, v[k])) next.push({ value: v[k], path: jsonPathChildPath(node.path, k, false) }); });
+          }
+        }
+      });
+      frontier = next;
+    });
+    const cap = limit || 10000;
+    return { results: frontier.slice(0, cap), truncated: frontier.length > cap, totalFound: frontier.length };
   }
 
   // Tries to interpret typed text the way a JSON value would (numbers,
@@ -3338,7 +3998,7 @@
       keys.forEach((k, idx) => {
         const childLi = document.createElement('li');
         childLi.className = 'leaf-row';
-        const childPath = path + (isArray ? ('[' + idx + ']') : ('.' + (isValidIdentifier(k) ? k : JSON.stringify(k))));
+        const childPath = isArray ? (path + '[' + idx + ']') : (isValidIdentifier(k) ? (path + '.' + k) : (path + '[' + JSON.stringify(k) + ']'));
         childLi.dataset.path = childPath;
 
         let keyLabel = '';
@@ -3527,10 +4187,17 @@
   }
 
   function performSearch(rawQuery) {
+    if (explorerModeEnabled && searchMode === 'jsonpath') { performJsonPathSearch(rawQuery); return; }
+    if (explorerModeEnabled && searchMode === 'pointer') { performPointerSearch(rawQuery); return; }
+    performTextSearch(rawQuery);
+  }
+
+  function performTextSearch(rawQuery) {
     clearSearchHighlights();
     const query = rawQuery.trim().toLowerCase();
     currentMatches = [];
     currentMatchIndex = -1;
+    queryResultRow.hidden = true;
     if (!query) {
       updateSearchCount();
       return;
@@ -3547,6 +4214,140 @@
       focusMatch();
     }
     updateSearchCount();
+  }
+
+  // Every node the tree ever renders carries data-path (leaf rows and
+  // container headers alike), so this is a complete path -> element index
+  // regardless of current collapse state.
+  function buildPathElementMap() {
+    const map = new Map();
+    output.querySelectorAll('[data-path]').forEach((el) => { if (!map.has(el.dataset.path)) map.set(el.dataset.path, el); });
+    return map;
+  }
+
+  function resultTypeLabel(value) {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return 'array';
+    return typeof value;
+  }
+
+  function clearQueryResultRow() {
+    queryResultRow.hidden = true;
+    queryResultRow.textContent = '';
+  }
+
+  function showQueryError(message) {
+    queryResultRow.hidden = false;
+    queryResultRow.innerHTML = '';
+    const span = document.createElement('span');
+    span.className = 'qr-error';
+    span.textContent = '✕ ' + message;
+    queryResultRow.appendChild(span);
+  }
+
+  function renderQueryResultRow(query, matches, truncated, totalFound) {
+    queryResultRow.hidden = false;
+    queryResultRow.innerHTML = '';
+    const head = document.createElement('div');
+    if (!matches.length) {
+      head.innerHTML = '';
+      const ok = document.createElement('span');
+      ok.className = 'qr-ok';
+      ok.textContent = '✓ Valid JSONPath — 0 matches';
+      head.appendChild(ok);
+    } else {
+      const types = new Set(matches.map((m) => resultTypeLabel(m.value)));
+      const typeLabel = types.size === 1 ? Array.from(types)[0] : matches.length + ' nodes';
+      const ok = document.createElement('span');
+      ok.className = 'qr-ok';
+      ok.textContent = '✓ ' + matches.length.toLocaleString() + (matches.length === 1 ? ' match' : ' matches') +
+        (truncated ? (' (of ' + totalFound.toLocaleString() + ' — showing first ' + matches.length.toLocaleString() + ')') : '') +
+        ' · Result: ' + typeLabel;
+      head.appendChild(ok);
+    }
+    queryResultRow.appendChild(head);
+
+    if (matches.length) {
+      const actions = document.createElement('div');
+      actions.className = 'qr-actions';
+      const mkBtn = (label, fn) => {
+        const b = document.createElement('button');
+        b.className = 'btn-sm';
+        b.textContent = label;
+        b.addEventListener('click', fn);
+        return b;
+      };
+      actions.appendChild(mkBtn('📋 Copy as JSON', async () => {
+        const payload = matches.length === 1 ? matches[0].value : matches.map((m) => m.value);
+        try { await navigator.clipboard.writeText(JSON.stringify(payload, null, 2)); if (window.showToast) window.showToast('Copied query result as JSON.', 'success'); }
+        catch (e) { if (window.showToast) window.showToast('Could not copy — clipboard unavailable.', 'error'); }
+      }));
+      actions.appendChild(mkBtn('⬇️ Download', () => {
+        const payload = matches.length === 1 ? matches[0].value : matches.map((m) => m.value);
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'query-result.json';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }));
+      queryResultRow.appendChild(actions);
+    }
+  }
+
+  function performJsonPathSearch(rawQuery) {
+    clearSearchHighlights();
+    currentMatches = [];
+    currentMatchIndex = -1;
+    clearQueryResultRow();
+    const query = rawQuery.trim();
+    if (!query) { updateSearchCount(); return; }
+    if (lastParsed === undefined) { showQueryError('Format some JSON first.'); updateSearchCount(); return; }
+    let evalResult;
+    try {
+      evalResult = evaluateJsonPath(lastParsed, query, queryResultLimit);
+    } catch (e) {
+      showQueryError('Invalid JSONPath — ' + e.message);
+      updateSearchCount();
+      return;
+    }
+    const map = buildPathElementMap();
+    evalResult.results.forEach((r) => {
+      const el = map.get(r.path);
+      if (el) currentMatches.push({ el: el, path: r.path, value: r.value });
+    });
+    currentMatches.forEach((m) => { expandAncestors(m.el); m.el.classList.add('search-match'); });
+    if (currentMatches.length) { currentMatchIndex = 0; focusMatch(); }
+    updateSearchCount();
+    renderQueryResultRow(query, currentMatches, evalResult.truncated, evalResult.totalFound);
+    recordRecentQuery(query);
+  }
+
+  function performPointerSearch(rawQuery) {
+    clearSearchHighlights();
+    currentMatches = [];
+    currentMatchIndex = -1;
+    clearQueryResultRow();
+    const query = rawQuery.trim();
+    if (!query) { updateSearchCount(); return; }
+    if (lastParsed === undefined) { showQueryError('Format some JSON first.'); updateSearchCount(); return; }
+    const resolved = resolvePointer(lastParsed, query);
+    if (!resolved.found) {
+      showQueryError('Node not found — ' + resolved.reason);
+      updateSearchCount();
+      return;
+    }
+    const map = buildPathElementMap();
+    const el = map.get(resolved.path);
+    if (el) {
+      currentMatches = [{ el: el, path: resolved.path, value: resolved.value }];
+      expandAncestors(el);
+      el.classList.add('search-match');
+      currentMatchIndex = 0;
+      focusMatch();
+    }
+    updateSearchCount();
+    renderQueryResultRow(query, currentMatches, false, currentMatches.length);
   }
 
   function goToMatch(delta) {
@@ -3603,6 +4404,106 @@
     hidePathBar();
     renderOutput();
   });
+
+  // ---------- Tree Edit Mode ----------
+  // Off by default: the CRUD row-actions built into buildTree() only render
+  // interactively once this is on, so casual viewing stays read-only and
+  // uncluttered, and turning it on visually "recommends" what's editable
+  // (dashed underlines on values) rather than relying purely on hover.
+  const EDIT_MODE_KEY = 'jsonViewer.treeEditMode';
+  const editModeBtn = document.getElementById('editModeBtn');
+
+  function applyEditModeUI(enabled) {
+    output.classList.toggle('tree-edit-mode', enabled);
+    editModeBtn.classList.toggle('active', enabled);
+    editModeBtn.setAttribute('aria-pressed', String(enabled));
+    editModeBtn.innerHTML = enabled ? '🔓 Edit Mode: On' : '🔒 Enable Edit';
+  }
+
+  editModeBtn.addEventListener('click', () => {
+    const next = !output.classList.contains('tree-edit-mode');
+    localStorage.setItem(EDIT_MODE_KEY, next ? '1' : '0');
+    applyEditModeUI(next);
+    if (window.showToast) {
+      window.showToast(next ? 'Edit Mode on — hover a value in Tree view to edit it.' : 'Edit Mode off.', 'info');
+    }
+  });
+
+  applyEditModeUI(localStorage.getItem(EDIT_MODE_KEY) === '1');
+
+  // ---------- Explorer Mode (JSONPath / Pointer search + Node Inspector) ----------
+  const EXPLORER_MODE_KEY = 'jsonViewer.explorerMode';
+  const explorerModeBtn = document.getElementById('explorerModeBtn');
+  const searchModeTabs = document.getElementById('searchModeTabs');
+
+  function setSearchMode(mode) {
+    searchMode = mode;
+    document.querySelectorAll('.smt-btn').forEach((b) => {
+      const active = b.dataset.mode === mode;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', String(active));
+    });
+    searchInput.placeholder = mode === 'search' ? '🔍 Search keys or values…' : mode === 'jsonpath' ? '$.users[*].name' : '/users/0/name';
+    searchInput.value = '';
+    clearSearchHighlights();
+    currentMatches = [];
+    currentMatchIndex = -1;
+    updateSearchCount();
+    clearQueryResultRow();
+  }
+
+  document.querySelectorAll('.smt-btn').forEach((b) => {
+    b.addEventListener('click', () => setSearchMode(b.dataset.mode));
+  });
+
+  function applyExplorerModeUI(enabled) {
+    explorerModeEnabled = enabled;
+    explorerModeBtn.classList.toggle('active', enabled);
+    explorerModeBtn.setAttribute('aria-pressed', String(enabled));
+    explorerModeBtn.innerHTML = enabled ? '🧭 Explorer: On' : '🧭 Enable Explorer';
+    searchModeTabs.hidden = !enabled;
+    if (!enabled) {
+      setSearchMode('search');
+      nodeInspector.hidden = true;
+    }
+  }
+
+  explorerModeBtn.addEventListener('click', () => {
+    const next = !explorerModeEnabled;
+    localStorage.setItem(EXPLORER_MODE_KEY, next ? '1' : '0');
+    applyExplorerModeUI(next);
+    if (window.showToast) {
+      window.showToast(next ? 'Explorer Mode on — try the JSONPath/Pointer search tabs and click any tree node.' : 'Explorer Mode off.', 'info');
+    }
+  });
+
+  applyExplorerModeUI(localStorage.getItem(EXPLORER_MODE_KEY) === '1');
+
+  // ---------- Query history + saved queries (query text + timestamp only — never a JSON copy) ----------
+  const QUERY_HISTORY_KEY = 'jsonViewer.queryHistory.v1';
+  const SAVED_QUERIES_KEY = 'jsonViewer.savedQueries.v1';
+  const MAX_QUERY_HISTORY = 20;
+
+  function loadQueryHistory() {
+    try { return JSON.parse(localStorage.getItem(QUERY_HISTORY_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function recordRecentQuery(query) {
+    const list = loadQueryHistory().filter((q) => q.query !== query);
+    list.unshift({ query: query, time: new Date().toISOString() });
+    while (list.length > MAX_QUERY_HISTORY) list.pop();
+    localStorage.setItem(QUERY_HISTORY_KEY, JSON.stringify(list));
+  }
+  function loadSavedQueries() {
+    try { return JSON.parse(localStorage.getItem(SAVED_QUERIES_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveSavedQueries(list) {
+    localStorage.setItem(SAVED_QUERIES_KEY, JSON.stringify(list));
+  }
+  function saveNamedQuery(name, query) {
+    const list = loadSavedQueries().filter((q) => q.name !== name);
+    list.unshift({ name: name, query: query });
+    saveSavedQueries(list);
+  }
 
   // ---------- Buttons ----------
   document.getElementById('formatBtn').addEventListener('click', () => formatJSON());
@@ -3746,6 +4647,7 @@
     }
   });
   cm.on('cursorActivity', updateCursorStatus);
+  cm.on('cursorActivity', scheduleEditorToTreeSync);
 
   renderHistory();
   updateInputCount();
@@ -3925,6 +4827,7 @@
     { label: 'Format JSON', run: () => formatJSON() },
     { label: 'Minify JSON', run: () => minifyJSON() },
     { label: 'Sort Keys (alphabetical, recursive)', run: () => sortKeysAction() },
+    { label: 'Toggle Tree Edit Mode', run: () => editModeBtn.click() },
     { label: 'Copy formatted JSON', run: () => copyFormattedJSON(null) },
     { label: 'Download formatted.json', run: () => document.getElementById('downloadBtn').click() },
     { label: 'Clear input and result', run: () => document.getElementById('clearBtn').click() },
@@ -4008,6 +4911,14 @@
   // key/value text, plain text, etc.) instead of requiring strict JSON.
   window.jsonViewerAttemptJSONify = attemptJSONify;
   window.jsonViewerMethodStatus = methodStatus;
+  // Exposed for potential reuse elsewhere (e.g. Compare, per its own
+  // future-integration note) and for direct testing of path/pointer logic.
+  window.jsonViewerParsePath = parsePath;
+  window.jsonViewerPathToPointer = pathToPointer;
+  window.jsonViewerResolvePointer = resolvePointer;
+  window.jsonViewerGetAtPath = getAtPath;
+  window.jsonViewerEvaluateJsonPath = evaluateJsonPath;
+  window.jsonViewerStringifyWithMap = stringifyWithMap;
 })();
 </script>
 
