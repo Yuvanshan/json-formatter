@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>JSON Viewer &amp; Formatter</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <script>
   // Apply saved/system theme before first paint to avoid a flash of the wrong theme.
   (function () {
@@ -301,7 +302,7 @@
     outline: 2px dashed var(--primary-bg);
     outline-offset: -2px;
   }
-  .editor-panel.drag-over textarea#input {
+  .editor-panel.drag-over .CodeMirror {
     background: var(--active-bg);
   }
   .drop-hint {
@@ -424,6 +425,43 @@
     border-radius: 3px;
     cursor: pointer;
     transition: background-color .3s ease;
+  }
+
+  /* ===== Tree CRUD editing ===== */
+  .node-header-row { display: inline; }
+  .row-actions, .tree-add-btn {
+    opacity: 0;
+    transition: opacity .12s ease;
+  }
+  .leaf-row:hover .row-actions, .leaf-row:focus-within .row-actions,
+  .node-header-row:hover .tree-add-btn, .node-header-row:focus-within .tree-add-btn {
+    opacity: 1;
+  }
+  .row-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 1px 3px;
+    margin-left: 3px;
+    line-height: 1.4;
+    color: var(--text-faint);
+    border-radius: 3px;
+  }
+  .row-action-btn:hover { color: var(--text); background: var(--btn-hover-bg); }
+  .row-action-btn.danger:hover { color: var(--status-err); }
+  .row-action-btn:disabled { opacity: .3; cursor: default; }
+  .row-action-btn:disabled:hover { background: none; color: var(--text-faint); }
+  .tree-edit-input {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    padding: 0 3px;
+    border: 1px solid var(--primary-bg);
+    border-radius: 3px;
+    background: var(--input-bg);
+    color: var(--text);
+    outline: none;
+    min-width: 60px;
   }
 
   .search-match { background: var(--search-match-bg); border-radius: 3px; }
@@ -555,6 +593,11 @@
     padding: 0;
   }
   .h-clear:hover { color: var(--status-err); }
+  .history-footer {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-soft);
+    text-align: center;
+  }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }
@@ -986,19 +1029,290 @@
     .compare-input-grid, .compare-panes { flex-direction: column; }
     .compare-pane { border-right: none; border-bottom: 1px solid var(--border); }
   }
+
+  /* ===== Reduced motion ===== */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  }
+
+  /* ===== Accessible focus rings ===== */
+  button:focus-visible, .file-btn:focus-visible, input:focus-visible, select:focus-visible,
+  .history-item:focus-visible, .toggle:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--primary-bg);
+    outline-offset: 1px;
+  }
+</style>
+
+<link rel="stylesheet" href="vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="vendor/codemirror/addon/fold/foldgutter.css">
+<style>
+  /* ===== CodeMirror JSON editor ===== */
+  .cm-host {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  .cm-host .CodeMirror {
+    height: 100%;
+    background: var(--bg-surface);
+    color: var(--node-punct);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  /* Prefixed with .CodeMirror (rather than bare classes) so these beat the
+     vendored default theme's own same-or-higher-specificity rules (e.g.
+     ".cm-s-default .cm-string", "div.CodeMirror span.CodeMirror-matchingbracket")
+     regardless of load order. */
+  .CodeMirror .CodeMirror-gutters {
+    background: var(--bg-surface-alt);
+    border-right: 1px solid var(--border-soft);
+  }
+  .CodeMirror .CodeMirror-linenumber { color: var(--text-faint); padding: 0 6px 0 8px; }
+  .CodeMirror .CodeMirror-cursor { border-left: 1.5px solid var(--text); }
+  .CodeMirror .CodeMirror-activeline-background { background: var(--active-bg); }
+  .CodeMirror .CodeMirror-selected, .CodeMirror.CodeMirror-focused .CodeMirror-selected { background: var(--search-match-bg); }
+  .CodeMirror .CodeMirror-matchingbracket { color: inherit; background: var(--search-current-bg); border-radius: 2px; }
+  .CodeMirror .CodeMirror-nonmatchingbracket { color: var(--status-err); text-decoration: underline wavy; }
+  .CodeMirror .CodeMirror-placeholder { color: var(--text-faint) !important; }
+  .cm-error-line-flash { background: var(--diff-missing-bg); }
+
+  .CodeMirror .cm-string { color: var(--node-string); }
+  /* Declared after .cm-string so it wins the tie on keys, which CodeMirror's
+     JSON mode tags with both classes ("cm-string cm-property"). */
+  .CodeMirror .cm-property { color: var(--node-key); }
+  .CodeMirror .cm-number { color: var(--node-number); }
+  .CodeMirror .cm-atom { color: var(--node-boolean); }
+  .CodeMirror .cm-search-match { background: var(--search-match-bg); border-radius: 2px; }
+
+  .CodeMirror .CodeMirror-foldmarker {
+    color: var(--node-punct);
+    text-shadow: none;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .CodeMirror .CodeMirror-foldgutter-open, .CodeMirror .CodeMirror-foldgutter-folded { color: var(--text-faint); }
+  .CodeMirror .CodeMirror-foldgutter-open:hover, .CodeMirror .CodeMirror-foldgutter-folded:hover { color: var(--text); }
+
+  /* ===== Large file banner ===== */
+  .large-file-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    background: #fff3cd;
+    color: #7a5b00;
+    border-bottom: 1px solid #f0dca0;
+    flex-wrap: wrap;
+  }
+  :root[data-theme="dark"] .large-file-banner { background: #4a3f1a; color: #f0d888; border-color: #6b5a1f; }
+  .large-file-banner[hidden] { display: none; }
+  .large-file-banner span { flex: 1; }
+
+  /* ===== Editor find/replace row ===== */
+  .editor-find-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+  }
+  .editor-find-row[hidden] { display: none; }
+  .find-replace-toggle {
+    padding: 4px 6px;
+    margin-top: 1px;
+  }
+  .find-replace-fields { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .ff-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ff-row[hidden] { display: none; }
+  .ff-row input[type="text"] {
+    flex: 1;
+    min-width: 100px;
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text);
+    outline: none;
+  }
+  .ff-row input[type="text"]:focus { border-color: var(--primary-bg); }
+  .toggle-chip {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-weight: 700;
+    padding: 4px 7px;
+  }
+  .toggle-chip[aria-pressed="true"] { background: var(--active-bg); border-color: var(--active-border); color: var(--primary-bg); }
+
+  /* ===== Editor status bar ===== */
+  .editor-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-surface-alt);
+    flex-wrap: wrap;
+  }
+  .esb-sep { color: var(--text-faint); }
+  .esb-validity.ok { color: var(--status-ok); font-weight: 600; }
+  .esb-validity.warn { color: #b3691a; font-weight: 600; }
+  :root[data-theme="dark"] .esb-validity.warn { color: #e0a83f; }
+  .esb-validity.idle { color: var(--text-faint); }
+  .esb-jsonstats { color: var(--text-faint); }
+  .esb-goto { margin-left: auto; }
+  .esb-goto[hidden] { display: none; }
+
+  /* ===== Validation panel ===== */
+  .validation-panel {
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-surface);
+    max-height: 160px;
+    overflow: auto;
+  }
+  .validation-panel[hidden] { display: none; }
+  .validation-panel-header {
+    padding: 6px 14px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    background: var(--bg-surface-alt);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .validation-row { padding: 8px 14px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .validation-row:last-child { border-bottom: none; }
+  .validation-row:hover { background: var(--history-hover-bg); }
+  .validation-row.repair, .validation-row.duplicate { cursor: default; }
+  .validation-row.repair:hover, .validation-row.duplicate:hover { background: transparent; }
+  .validation-row-head { font-size: 12px; font-weight: 600; color: var(--status-err); }
+  .validation-row.repair .validation-row-head, .validation-row.duplicate .validation-row-head { color: #b3691a; }
+  :root[data-theme="dark"] .validation-row.repair .validation-row-head,
+  :root[data-theme="dark"] .validation-row.duplicate .validation-row-head { color: #e0a83f; }
+  .validation-row-body { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+  .validation-row-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .validation-repair-preview {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: var(--bg-surface-alt);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    max-height: 160px;
+    overflow: auto;
+  }
+  .validation-repair-preview[hidden] { display: none; }
+
+  /* ===== Command palette ===== */
+  .command-palette-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.25);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 14vh;
+    z-index: 80;
+  }
+  .command-palette-overlay[hidden] { display: none; }
+  .command-palette {
+    width: min(480px, 90vw);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    overflow: hidden;
+  }
+  .command-palette input {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 12px 14px;
+    border: none;
+    border-bottom: 1px solid var(--border-soft);
+    background: transparent;
+    color: var(--text);
+    outline: none;
+  }
+  #commandPaletteList { max-height: 260px; overflow: auto; padding: 6px; }
+  .command-row { padding: 8px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .command-row:hover, .command-row.active { background: var(--active-bg); }
+
+  .whats-new-dialog { padding: 18px 20px; }
+  .whats-new-header { font-size: 14.5px; font-weight: 700; margin-bottom: 10px; }
+  .whats-new-list { margin: 0 0 16px; padding-left: 20px; font-size: 12.5px; line-height: 1.6; color: var(--text); }
+  .whats-new-list li { margin-bottom: 6px; }
+  .whats-new-actions { display: flex; justify-content: flex-end; }
+
+  @media (max-width: 860px) {
+    .toolbar { gap: 4px; }
+    .editor-statusbar { font-size: 10.5px; gap: 6px; }
+    .esb-jsonstats { display: none; }
+    .esb-goto { margin-left: 0; }
+    .editor-find-row { position: fixed; left: 0; right: 0; bottom: 0; z-index: 70; box-shadow: 0 -4px 16px rgba(0,0,0,.18); border-top: 1px solid var(--border); }
+    .validation-panel { max-height: 120px; }
+
+    /* Desktop lays Input / Result / History out side-by-side in one row;
+       on narrow screens that only fits by overlapping them, so stack them
+       into independently-scrollable full-width sections instead. */
+    main { flex-direction: column; overflow-y: auto; }
+    .editor-panel, .result-panel, .history-panel {
+      flex: none;
+      min-height: 0;
+      border-right: none;
+      border-left: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .editor-panel { height: 62vh; }
+    .result-panel { height: 62vh; }
+    .history-panel { height: 40vh; }
+  }
 </style>
 </head>
 <body>
 
 <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
+<div class="command-palette-overlay" id="commandPaletteOverlay" hidden>
+  <div class="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+    <input type="text" id="commandPaletteInput" placeholder="Type a command…" aria-label="Command palette input">
+    <div id="commandPaletteList" role="listbox" aria-label="Commands"></div>
+  </div>
+</div>
+
+<div class="command-palette-overlay" id="whatsNewOverlay" hidden>
+  <div class="command-palette whats-new-dialog" role="dialog" aria-modal="true" aria-label="What's new">
+    <div class="whats-new-header">✨ What's new</div>
+    <ul class="whats-new-list">
+      <li>Professional code editor — syntax highlighting, line numbers, code folding, bracket matching</li>
+      <li>Real-time validation with the exact error line/column, one click away with "Go to Error"</li>
+      <li>Repair preview — see a suggested fix before applying it, never automatic</li>
+      <li>Find &amp; Replace in the editor (Cmd/Ctrl+F, Cmd/Ctrl+H) and a command palette (Cmd/Ctrl+Shift+P)</li>
+      <li>Large-file mode keeps validation off the main thread for huge documents</li>
+    </ul>
+    <div class="whats-new-actions">
+      <button class="btn-sm primary" id="whatsNewSkipBtn">Skip</button>
+    </div>
+  </div>
+</div>
+
 <header>
-  <h1>🧾 JSON Viewer &amp; Formatter</h1>
+  <h1><img src="logo.svg" width="20" height="20" alt="JSON Viewer &amp; Formatter logo"> JSON Viewer &amp; Formatter</h1>
   <div class="toolbar">
     <label class="file-btn" for="fileInput">📂 Open file…</label>
     <input type="file" id="fileInput" accept="*/*">
     <button id="formatBtn" class="primary" title="Format (Cmd/Ctrl+Enter)">✨ Format</button>
     <button id="minifyBtn" title="Minify — remove all whitespace">📦 Minify</button>
+    <button id="sortKeysBtn" title="Sort object keys alphabetically, recursively">🔤 Sort Keys</button>
     <button id="copyBtn" title="Copy formatted JSON to clipboard">📋 Copy</button>
     <button id="downloadBtn" title="Download as formatted.json">⬇️ Download</button>
     <button id="clearBtn" title="Clear input and result">🗑️ Clear</button>
@@ -1062,12 +1376,65 @@
     <div class="panel-header">
       <span>Input</span>
       <div class="panel-header-actions">
+        <select id="indentSelect" class="btn-sm" title="Indentation used when formatting" aria-label="Indentation size">
+          <option value="2" selected>2 spaces</option>
+          <option value="4">4 spaces</option>
+          <option value="tab">Tab</option>
+        </select>
         <span class="input-count" id="inputCount"></span>
+        <button class="btn-sm" id="editorFindBtn" title="Find (Cmd/Ctrl+F)" aria-label="Find in editor">🔍 Find</button>
         <button class="btn-sm" id="pasteBtn" title="Paste from clipboard">📋 Paste</button>
       </div>
     </div>
-    <textarea id="input" placeholder="Paste JSON, JS-style objects, key: value text, or any text — it will be converted to JSON…" spellcheck="false"></textarea>
+
+    <div class="large-file-banner" id="largeFileBanner" hidden>
+      <span id="largeFileBannerText"></span>
+      <button class="btn-sm" id="largeFileContinueBtn">Continue</button>
+      <button class="btn-sm" id="largeFileModeBtn">Use Large File Mode</button>
+    </div>
+
+    <div class="editor-find-row" id="editorFindRow" hidden role="search" aria-label="Find and replace in editor">
+      <button class="btn-sm find-replace-toggle" id="findReplaceToggleBtn" title="Toggle replace row" aria-label="Toggle replace row" aria-expanded="false">▸</button>
+      <div class="find-replace-fields">
+        <div class="ff-row">
+          <input type="text" id="editorFindInput" placeholder="Find…" aria-label="Find in editor">
+          <span class="search-count" id="editorFindCount"></span>
+          <button class="btn-sm" id="editorFindPrevBtn" title="Previous match" aria-label="Previous match">↑</button>
+          <button class="btn-sm" id="editorFindNextBtn" title="Next match" aria-label="Next match">↓</button>
+          <button class="btn-sm toggle-chip" id="editorFindCaseBtn" title="Match case" aria-label="Match case" aria-pressed="false">Aa</button>
+          <button class="btn-sm toggle-chip" id="editorFindWordBtn" title="Whole word" aria-label="Whole word" aria-pressed="false">""</button>
+          <button class="btn-sm toggle-chip" id="editorFindRegexBtn" title="Use regular expression" aria-label="Use regular expression" aria-pressed="false">.*</button>
+          <button class="btn-sm" id="editorFindCloseBtn" title="Close (Esc)" aria-label="Close find">✕</button>
+        </div>
+        <div class="ff-row" id="editorReplaceRow" hidden>
+          <input type="text" id="editorReplaceInput" placeholder="Replace…" aria-label="Replace with">
+          <button class="btn-sm" id="editorReplaceOneBtn">Replace</button>
+          <button class="btn-sm" id="editorReplaceAllBtn">Replace All</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cm-host" id="cmHost">
+      <textarea id="input" placeholder="Paste JSON, JS-style objects, key: value text, or any text — it will be converted to JSON…" spellcheck="false"></textarea>
+    </div>
     <div class="drop-hint">📂 Drop file to import</div>
+
+    <div class="editor-statusbar" id="editorStatusBar">
+      <span class="esb-validity idle" id="esbValidity">—</span>
+      <span class="esb-sep" aria-hidden="true">·</span>
+      <span class="esb-cursor" id="esbCursor">Ln 1, Col 1</span>
+      <span class="esb-sep" aria-hidden="true">·</span>
+      <span class="esb-counts" id="esbCounts"></span>
+      <span class="esb-sep" id="esbJsonStatsSep" aria-hidden="true" hidden>·</span>
+      <span class="esb-jsonstats" id="esbJsonStats" hidden></span>
+      <button class="btn-sm esb-goto" id="esbGotoErrorBtn" hidden>Go to Error</button>
+    </div>
+
+    <div class="validation-panel" id="validationPanel" hidden>
+      <div class="validation-panel-header">Validation</div>
+      <div id="validationPanelBody"></div>
+    </div>
+
     <div id="status">Nothing formatted yet.</div>
   </section>
 
@@ -1107,6 +1474,9 @@
       <button class="h-clear" id="clearHistoryBtn">Clear all</button>
     </div>
     <div id="historyList"></div>
+    <div class="history-footer">
+      <button class="h-clear" id="clearAllDataBtn" title="Clears history plus theme and dismissed-tip preferences on this device">🔒 Clear all local data</button>
+    </div>
   </aside>
 </main>
 
@@ -1270,12 +1640,24 @@
   </div>
 </div>
 
+<!-- Vendored CodeMirror 5 (local files, no CDN / no runtime network requests) -->
+<script src="vendor/codemirror/lib/codemirror.js"></script>
+<script src="vendor/codemirror/mode/javascript/javascript.js"></script>
+<script src="vendor/codemirror/addon/edit/closebrackets.js"></script>
+<script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
+<script src="vendor/codemirror/addon/fold/foldcode.js"></script>
+<script src="vendor/codemirror/addon/fold/foldgutter.js"></script>
+<script src="vendor/codemirror/addon/fold/brace-fold.js"></script>
+<script src="vendor/codemirror/addon/search/searchcursor.js"></script>
+<script src="vendor/codemirror/addon/selection/active-line.js"></script>
+<script src="vendor/codemirror/addon/display/placeholder.js"></script>
+
 <script>
 (function () {
   const STORAGE_KEY = 'jsonViewer.history.v1';
   const MAX_HISTORY = 30;
 
-  const input = document.getElementById('input');
+  const inputTextarea = document.getElementById('input');
   const output = document.getElementById('output');
   const status = document.getElementById('status');
   const historyList = document.getElementById('historyList');
@@ -1285,6 +1667,80 @@
   const pathBar = document.getElementById('pathBar');
   const pathText = document.getElementById('pathText');
   const inputCount = document.getElementById('inputCount');
+  const indentSelect = document.getElementById('indentSelect');
+  const largeFileBanner = document.getElementById('largeFileBanner');
+  const largeFileBannerText = document.getElementById('largeFileBannerText');
+  const largeFileContinueBtn = document.getElementById('largeFileContinueBtn');
+  const largeFileModeBtn = document.getElementById('largeFileModeBtn');
+  const editorFindBtn = document.getElementById('editorFindBtn');
+  const editorFindRow = document.getElementById('editorFindRow');
+  const editorFindInput = document.getElementById('editorFindInput');
+  const editorFindCount = document.getElementById('editorFindCount');
+  const editorFindPrevBtn = document.getElementById('editorFindPrevBtn');
+  const editorFindNextBtn = document.getElementById('editorFindNextBtn');
+  const editorFindCaseBtn = document.getElementById('editorFindCaseBtn');
+  const editorFindWordBtn = document.getElementById('editorFindWordBtn');
+  const editorFindRegexBtn = document.getElementById('editorFindRegexBtn');
+  const editorFindCloseBtn = document.getElementById('editorFindCloseBtn');
+  const findReplaceToggleBtn = document.getElementById('findReplaceToggleBtn');
+  const editorReplaceRow = document.getElementById('editorReplaceRow');
+  const editorReplaceInput = document.getElementById('editorReplaceInput');
+  const editorReplaceOneBtn = document.getElementById('editorReplaceOneBtn');
+  const editorReplaceAllBtn = document.getElementById('editorReplaceAllBtn');
+  const esbValidity = document.getElementById('esbValidity');
+  const esbCursor = document.getElementById('esbCursor');
+  const esbCounts = document.getElementById('esbCounts');
+  const esbJsonStatsSep = document.getElementById('esbJsonStatsSep');
+  const esbJsonStats = document.getElementById('esbJsonStats');
+  const esbGotoErrorBtn = document.getElementById('esbGotoErrorBtn');
+  const validationPanel = document.getElementById('validationPanel');
+  const validationPanelBody = document.getElementById('validationPanelBody');
+  const commandPaletteOverlay = document.getElementById('commandPaletteOverlay');
+  const commandPaletteInput = document.getElementById('commandPaletteInput');
+  const commandPaletteList = document.getElementById('commandPaletteList');
+
+  const cm = CodeMirror.fromTextArea(inputTextarea, {
+    mode: 'application/json',
+    lineNumbers: true,
+    matchBrackets: true,
+    autoCloseBrackets: { pairs: '()[]{}""', explode: '[]{}' },
+    styleActiveLine: true,
+    foldGutter: true,
+    gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
+    indentUnit: 2,
+    tabSize: 2,
+    indentWithTabs: false,
+    viewportMargin: 30,
+    placeholder: 'Paste JSON, JS-style objects, key: value text, or any text — it will be converted to JSON…',
+    extraKeys: {
+      'Cmd-Enter': function () { formatJSON(); },
+      'Ctrl-Enter': function () { formatJSON(); },
+      'Shift-Cmd-F': function () { formatJSON(); },
+      'Shift-Ctrl-F': function () { formatJSON(); },
+      'Shift-Cmd-M': function () { minifyJSON(); },
+      'Shift-Ctrl-M': function () { minifyJSON(); },
+      'Cmd-F': function () { openFindPanel(false); },
+      'Ctrl-F': function () { openFindPanel(false); },
+      'Cmd-H': function () { openFindPanel(true); },
+      'Ctrl-H': function () { openFindPanel(true); },
+      'Cmd-S': function () { document.getElementById('downloadBtn').click(); },
+      'Ctrl-S': function () { document.getElementById('downloadBtn').click(); },
+      'Shift-Cmd-P': function () { openCommandPalette(); },
+      'Shift-Ctrl-P': function () { openCommandPalette(); },
+      'Esc': function () { closeActiveOverlay(); }
+    }
+  });
+
+  // Thin wrappers so the rest of the app can keep treating the editor like
+  // the plain textarea it replaced — CodeMirror.fromTextArea leaves the
+  // original <textarea>.value permanently stale, it does not stay in sync.
+  function getInputValue() { return cm.getValue(); }
+  function setInputValue(v) { cm.setValue(v == null ? '' : v); }
+  // Undoable full-document replace (used by Apply Repair), unlike setValue
+  // which resets CodeMirror's undo history.
+  function replaceInputValue(v) {
+    cm.replaceRange(v == null ? '' : v, { line: 0, ch: 0 }, { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length });
+  }
 
   let lastFormatted = '';
   let lastParsed = undefined;
@@ -1292,9 +1748,74 @@
   let searchableNodes = [];
   let currentMatches = [];
   let currentMatchIndex = -1;
+  let activeOverlay = null;
+  let lastValidationError = null;
+  let largeFileDecision = null;
+  let validateTimer = null;
+  let validatorWorker = null;
+  let workerRequestId = 0;
+  const LARGE_FILE_BYTES = 2 * 1024 * 1024;
+  const VALIDATE_DEBOUNCE_MS = 220;
+  const findState = { caseSensitive: false, wholeWord: false, regex: false, matches: [], index: -1 };
+  let findMarks = [];
 
-  // ---------- History (localStorage) ----------
-  function loadHistory() {
+  // ---------- History (IndexedDB, migrated from the old localStorage blob) ----------
+  // History entries can hold large content/formatted strings, which is
+  // exactly what IndexedDB is for — localStorage now only holds small
+  // preferences (theme, intro-seen flags). Everything here is promise-based;
+  // callers keep firing-and-forgetting exactly like the old synchronous
+  // localStorage calls (renderHistory()/addToHistory() with no await), so no
+  // call site outside this section needs to change.
+  const IDB_NAME = 'jsonViewerDB';
+  const IDB_STORE = 'history';
+  const HISTORY_MIGRATED_KEY = 'jsonViewer.historyMigrated.v1';
+  let useIndexedDbHistory = typeof indexedDB !== 'undefined';
+  let idbPromise = null;
+
+  function idbOpen() {
+    if (idbPromise) return idbPromise;
+    idbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+          req.result.createObjectStore(IDB_STORE, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return idbPromise;
+  }
+
+  function idbGetAll() {
+    return idbOpen().then((db) => new Promise((resolve, reject) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    }));
+  }
+
+  function idbReplaceAll(entries) {
+    return idbOpen().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.clear();
+      entries.forEach((e) => store.put(e));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+
+  function idbClearStore() {
+    return idbOpen().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+
+  function loadLegacyHistory() {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     } catch (e) {
@@ -1302,8 +1823,39 @@
     }
   }
 
-  function saveHistory(list) {
+  function saveLegacyHistory(list) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  }
+
+  // Runs once: copies any pre-existing localStorage history into IndexedDB.
+  // Never deletes the legacy key — leaving it costs nothing, and only ever
+  // clearing it after verified success still isn't worth the risk for zero
+  // benefit. Any failure here just leaves IndexedDB adoption for next load.
+  function migrateHistoryIfNeeded() {
+    if (!useIndexedDbHistory || localStorage.getItem(HISTORY_MIGRATED_KEY)) return Promise.resolve();
+    const legacy = loadLegacyHistory();
+    if (!legacy.length) {
+      localStorage.setItem(HISTORY_MIGRATED_KEY, '1');
+      return Promise.resolve();
+    }
+    return idbGetAll().then((existing) => {
+      if (existing.length) { localStorage.setItem(HISTORY_MIGRATED_KEY, '1'); return; }
+      return idbReplaceAll(legacy).then(() => idbGetAll()).then((after) => {
+        if (after.length >= legacy.length) localStorage.setItem(HISTORY_MIGRATED_KEY, '1');
+      });
+    }).catch(() => { useIndexedDbHistory = false; });
+  }
+
+  function loadHistoryList() {
+    if (!useIndexedDbHistory) return Promise.resolve(loadLegacyHistory());
+    return idbGetAll()
+      .then((list) => list.slice().sort((a, b) => new Date(b.time) - new Date(a.time)))
+      .catch(() => { useIndexedDbHistory = false; return loadLegacyHistory(); });
+  }
+
+  function persistHistoryList(list) {
+    if (!useIndexedDbHistory) { saveLegacyHistory(list); return Promise.resolve(); }
+    return idbReplaceAll(list).catch(() => { useIndexedDbHistory = false; saveLegacyHistory(list); });
   }
 
   function methodTypeLabel(method) {
@@ -1319,7 +1871,6 @@
   // formatted output (not just a preview) so opening this entry later can
   // restore the exact result without re-running the parser (FR-05).
   function addToHistory(name, rawText, formattedText, type) {
-    const list = loadHistory();
     const entry = {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       name: name || 'Pasted JSON',
@@ -1329,15 +1880,20 @@
       content: rawText,
       formatted: formattedText
     };
-    list.unshift(entry);
-    while (list.length > MAX_HISTORY) list.pop();
-    saveHistory(list);
-    renderHistory();
+    migrateHistoryIfNeeded()
+      .then(loadHistoryList)
+      .then((list) => {
+        list.unshift(entry);
+        while (list.length > MAX_HISTORY) list.pop();
+        return persistHistoryList(list);
+      })
+      .then(renderHistory);
   }
 
   function deleteHistoryEntry(id) {
-    saveHistory(loadHistory().filter((e) => e.id !== id));
-    renderHistory();
+    loadHistoryList()
+      .then((list) => persistHistoryList(list.filter((e) => e.id !== id)))
+      .then(renderHistory);
   }
 
   // Loads a history entry as a read-only view: restores the original input
@@ -1345,8 +1901,7 @@
   // creating a new history entry (FR-05/FR-06).
   function loadHistoryEntry(entry) {
     hidePathBar();
-    input.value = entry.content;
-    updateInputCount();
+    setInputValue(entry.content);
     lastFormatted = entry.formatted;
     try {
       lastParsed = JSON.parse(entry.formatted);
@@ -1360,40 +1915,54 @@
   }
 
   function renderHistory() {
-    const list = loadHistory();
-    historyList.innerHTML = '';
-    if (!list.length) {
-      historyList.innerHTML = '<div class="history-empty">No history yet. Formatted JSON will show up here.</div>';
-      return;
-    }
-    list.forEach((entry) => {
-      const div = document.createElement('div');
-      div.className = 'history-item';
-      const time = new Date(entry.time);
-      const timeStr = time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
-        time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-      div.innerHTML =
-        '<div class="h-row"><div class="h-title"></div><button class="h-delete" title="Delete this entry">✕</button></div>' +
-        '<div class="h-meta"><span class="h-type"></span><span class="h-time"></span></div>' +
-        '<div class="h-preview"></div>';
-      div.querySelector('.h-title').textContent = entry.name;
-      div.querySelector('.h-type').textContent = entry.type || 'JSON';
-      div.querySelector('.h-time').textContent = timeStr;
-      div.querySelector('.h-preview').textContent = entry.preview;
-      div.querySelector('.h-delete').addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteHistoryEntry(entry.id);
+    migrateHistoryIfNeeded().then(loadHistoryList).then((list) => {
+      historyList.innerHTML = '';
+      if (!list.length) {
+        historyList.innerHTML = '<div class="history-empty">No history yet. Formatted JSON will show up here.</div>';
+        return;
+      }
+      list.forEach((entry) => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        const time = new Date(entry.time);
+        const timeStr = time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+          time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        div.innerHTML =
+          '<div class="h-row"><div class="h-title"></div><button class="h-delete" title="Delete this entry">✕</button></div>' +
+          '<div class="h-meta"><span class="h-type"></span><span class="h-time"></span></div>' +
+          '<div class="h-preview"></div>';
+        div.querySelector('.h-title').textContent = entry.name;
+        div.querySelector('.h-type').textContent = entry.type || 'JSON';
+        div.querySelector('.h-time').textContent = timeStr;
+        div.querySelector('.h-preview').textContent = entry.preview;
+        div.querySelector('.h-delete').addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteHistoryEntry(entry.id);
+        });
+        div.addEventListener('click', () => loadHistoryEntry(entry));
+        historyList.appendChild(div);
       });
-      div.addEventListener('click', () => loadHistoryEntry(entry));
-      historyList.appendChild(div);
     });
   }
 
   document.getElementById('clearHistoryBtn').addEventListener('click', () => {
     if (confirm('Clear all history?')) {
-      saveHistory([]);
-      renderHistory();
+      persistHistoryList([]).then(renderHistory);
     }
+  });
+
+  document.getElementById('clearAllDataBtn').addEventListener('click', () => {
+    if (!confirm('This clears all history and local preferences (theme, dismissed tips) on this device. Continue?')) return;
+    Promise.resolve(useIndexedDbHistory ? idbClearStore().catch(() => {}) : Promise.resolve())
+      .then(() => {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(HISTORY_MIGRATED_KEY);
+        localStorage.removeItem('jsonViewer.theme');
+        localStorage.removeItem('jsonViewer.compareIntroSeen');
+        localStorage.removeItem(WHATS_NEW_KEY);
+        renderHistory();
+        if (window.showToast) window.showToast('Cleared all local data on this device.', 'success');
+      });
   });
 
   // ---------- File open ----------
@@ -1401,8 +1970,7 @@
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      input.value = reader.result;
-      updateInputCount();
+      setInputValue(reader.result);
       // Importing a file only loads it into the editor; it does not count
       // as a user-initiated conversion, so it must not save history (FR-07).
       formatJSON(file.name, false);
@@ -1451,21 +2019,31 @@
   function computeStats(value) {
     let keys = 0;
     let maxDepth = 0;
+    let objects = 0;
+    let arrays = 0;
     (function walk(v, depth) {
       maxDepth = Math.max(maxDepth, depth);
       if (Array.isArray(v)) {
+        arrays++;
         v.forEach((item) => walk(item, depth + 1));
       } else if (v !== null && typeof v === 'object') {
+        objects++;
         const ks = Object.keys(v);
         keys += ks.length;
         ks.forEach((k) => walk(v[k], depth + 1));
       }
     })(value, 0);
-    return { keys, depth: maxDepth };
+    return { keys, depth: maxDepth, objects, arrays };
+  }
+
+  function formatByteSize(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(2) + ' KB';
+    return (n / 1024 / 1024).toFixed(2) + ' MB';
   }
 
   function updateInputCount() {
-    const text = input.value;
+    const text = getInputValue();
     if (!text) {
       inputCount.textContent = '';
       return;
@@ -1473,12 +2051,543 @@
     const lines = text.split(/\r?\n/).length;
     inputCount.textContent = text.length.toLocaleString() + ' chars · ' + lines.toLocaleString() + ' lines';
   }
-  input.addEventListener('input', updateInputCount);
 
   function hidePathBar() {
     pathBar.classList.remove('show');
     pathText.textContent = '';
   }
+
+  // ---------- Editor status bar: cursor, selection, counts ----------
+  function updateEditorStatusCounts() {
+    const raw = getInputValue();
+    esbCounts.textContent = raw.length.toLocaleString() + ' chars · ' + cm.lineCount().toLocaleString() + ' lines · ' + formatByteSize(new Blob([raw]).size);
+  }
+
+  function updateCursorStatus() {
+    const cur = cm.getCursor();
+    let text = 'Ln ' + (cur.line + 1) + ', Col ' + (cur.ch + 1);
+    const sel = cm.getSelection();
+    if (sel) {
+      const ranges = cm.listSelections();
+      let selChars = 0;
+      ranges.forEach((r) => { selChars += Math.abs(cm.indexFromPos(r.head) - cm.indexFromPos(r.anchor)); });
+      text += '  (' + selChars.toLocaleString() + ' selected)';
+    }
+    esbCursor.textContent = text;
+  }
+
+  function updateJsonStats(value) {
+    if (value === null || value === undefined) {
+      esbJsonStats.hidden = true;
+      esbJsonStatsSep.hidden = true;
+      return;
+    }
+    const stats = computeStats(value);
+    esbJsonStats.textContent = stats.objects.toLocaleString() + ' objects · ' + stats.arrays.toLocaleString() + ' arrays · ' +
+      stats.keys.toLocaleString() + ' keys · depth ' + stats.depth;
+    esbJsonStats.hidden = false;
+    esbJsonStatsSep.hidden = false;
+  }
+
+  function setValidityIdle(text) {
+    esbValidity.textContent = text;
+    esbValidity.className = 'esb-validity idle';
+    hideValidationPanel();
+  }
+
+  // ---------- Strict JSON grammar validator (line/column/expected/found) ----------
+  // Separate from the lenient attemptJSONify() chain below — this exists
+  // purely to pinpoint exact error locations per RFC 8259 grammar, without
+  // ever accepting the JS-object-syntax / struct-dump / key-value liberties
+  // the rest of this app intentionally allows.
+  function validateStrictJson(text) {
+    const n = text.length;
+    let i = 0, line = 1, col = 1;
+
+    function advance(count) {
+      for (let k = 0; k < count; k++) {
+        if (text[i] === '\n') { line++; col = 1; } else { col++; }
+        i++;
+      }
+    }
+    function fail(message, expected, found) {
+      throw { message: message, expected: expected, found: found, index: i, line: line, column: col };
+    }
+    function isDigit(ch) { return ch >= '0' && ch <= '9'; }
+    function skipWs() { while (i < n && /[ \t\n\r]/.test(text[i])) advance(1); }
+    function peek() { return text[i]; }
+    function tokenPreview() {
+      if (i >= n) return 'end of input';
+      return JSON.stringify(text[i]);
+    }
+
+    function parseValue() {
+      skipWs();
+      if (i >= n) fail('Unexpected end of input', 'a value', 'end of input');
+      const ch = text[i];
+      if (ch === '{') return parseObject();
+      if (ch === '[') return parseArray();
+      if (ch === '"') return parseString();
+      if (ch === '-' || isDigit(ch)) return parseNumber();
+      if (text.startsWith('true', i)) return advance(4);
+      if (text.startsWith('false', i)) return advance(5);
+      if (text.startsWith('null', i)) return advance(4);
+      fail('Unexpected token', 'a value (object, array, string, number, true, false, or null)', tokenPreview());
+    }
+
+    function parseObject() {
+      advance(1);
+      skipWs();
+      if (peek() === '}') { advance(1); return; }
+      while (true) {
+        skipWs();
+        if (peek() !== '"') fail('Expected property name in double quotes', '"', tokenPreview());
+        parseString();
+        skipWs();
+        if (peek() !== ':') fail("Expected ':' after property name", ':', tokenPreview());
+        advance(1);
+        parseValue();
+        skipWs();
+        if (peek() === ',') {
+          advance(1);
+          skipWs();
+          if (peek() === '}') fail('Trailing comma not allowed', 'a property name', '}');
+          continue;
+        }
+        if (peek() === '}') { advance(1); return; }
+        fail("Expected ',' or '}'", "',' or '}'", tokenPreview());
+      }
+    }
+
+    function parseArray() {
+      advance(1);
+      skipWs();
+      if (peek() === ']') { advance(1); return; }
+      while (true) {
+        parseValue();
+        skipWs();
+        if (peek() === ',') {
+          advance(1);
+          skipWs();
+          if (peek() === ']') fail('Trailing comma not allowed', 'a value', ']');
+          continue;
+        }
+        if (peek() === ']') { advance(1); return; }
+        fail("Expected ',' or ']'", "',' or ']'", tokenPreview());
+      }
+    }
+
+    function parseString() {
+      advance(1);
+      while (true) {
+        if (i >= n) fail('Unterminated string literal', 'closing \'"\'', 'end of input');
+        const ch = text[i];
+        if (ch === '"') { advance(1); return; }
+        if (ch === '\\') {
+          advance(1);
+          if (i >= n) fail('Unterminated escape sequence', 'an escape character', 'end of input');
+          const esc = text[i];
+          if (esc === 'u') {
+            advance(1);
+            for (let k = 0; k < 4; k++) {
+              if (!/[0-9a-fA-F]/.test(text[i] || '')) fail('Invalid unicode escape', '4 hex digits', tokenPreview());
+              advance(1);
+            }
+          } else if ('"\\/bfnrt'.indexOf(esc) !== -1) {
+            advance(1);
+          } else {
+            fail('Invalid escape character', '\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, or \\u', JSON.stringify(esc));
+          }
+          continue;
+        }
+        if (ch.charCodeAt(0) < 0x20) fail('Unescaped control character in string', 'an escaped character', tokenPreview());
+        advance(1);
+      }
+    }
+
+    function parseNumber() {
+      if (peek() === '-') advance(1);
+      if (peek() === '0') {
+        advance(1);
+      } else if (isDigit(peek())) {
+        while (i < n && isDigit(text[i])) advance(1);
+      } else {
+        fail('Invalid number', 'a digit', tokenPreview());
+      }
+      if (peek() === '.') {
+        advance(1);
+        if (!isDigit(peek())) fail('Invalid number: expected digit after decimal point', 'a digit', tokenPreview());
+        while (i < n && isDigit(text[i])) advance(1);
+      }
+      if (peek() === 'e' || peek() === 'E') {
+        advance(1);
+        if (peek() === '+' || peek() === '-') advance(1);
+        if (!isDigit(peek())) fail('Invalid number: expected digit in exponent', 'a digit', tokenPreview());
+        while (i < n && isDigit(text[i])) advance(1);
+      }
+    }
+
+    try {
+      parseValue();
+      skipWs();
+      if (i < n) fail('Unexpected trailing content after JSON value', 'end of input', tokenPreview());
+      return { valid: true };
+    } catch (e) {
+      if (e && typeof e.line === 'number') {
+        return { valid: false, line: e.line, column: e.column, index: e.index, message: e.message, expected: e.expected, found: e.found };
+      }
+      return { valid: false, line: 1, column: 1, index: 0, message: 'Invalid JSON', expected: null, found: null };
+    }
+  }
+
+  // Scans the raw text (not the already-parsed value, where JSON.parse has
+  // silently kept only the last of any duplicate key) for object keys that
+  // repeat within the same object. Best-effort and error-tolerant — it never
+  // throws, it just stops and returns whatever it found so far if the text
+  // stops looking like well-formed JSON. Paths use the same "$.a.b[2]"
+  // format as the Tree view's path bar.
+  function findDuplicateKeys(text) {
+    const n = text.length;
+    let i = 0;
+    const duplicates = [];
+
+    function skipWs() { while (i < n && /[ \t\n\r]/.test(text[i])) i++; }
+
+    function parseStringLiteral() {
+      if (text[i] !== '"') return null;
+      let j = i + 1;
+      let out = '';
+      while (j < n) {
+        const ch = text[j];
+        if (ch === '"') { i = j + 1; return out; }
+        if (ch === '\\') {
+          const esc = text[j + 1];
+          if (esc === 'u') { out += String.fromCharCode(parseInt(text.slice(j + 2, j + 6), 16) || 0); j += 6; }
+          else { out += ({ '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' })[esc] ?? esc; j += 2; }
+          continue;
+        }
+        out += ch;
+        j++;
+      }
+      return null; // unterminated string — malformed, stop here
+    }
+
+    function skipString() { return parseStringLiteral() !== null; }
+
+    function skipNumber() {
+      const start = i;
+      if (text[i] === '-') i++;
+      while (i < n && text[i] >= '0' && text[i] <= '9') i++;
+      if (text[i] === '.') { i++; while (i < n && text[i] >= '0' && text[i] <= '9') i++; }
+      if (text[i] === 'e' || text[i] === 'E') { i++; if (text[i] === '+' || text[i] === '-') i++; while (i < n && text[i] >= '0' && text[i] <= '9') i++; }
+      return i > start;
+    }
+
+    function parseValue(path) {
+      skipWs();
+      if (i >= n) return false;
+      const ch = text[i];
+      if (ch === '{') return parseObject(path);
+      if (ch === '[') return parseArray(path);
+      if (ch === '"') return skipString();
+      if (ch === '-' || (ch >= '0' && ch <= '9')) return skipNumber();
+      if (text.startsWith('true', i)) { i += 4; return true; }
+      if (text.startsWith('false', i)) { i += 5; return true; }
+      if (text.startsWith('null', i)) { i += 4; return true; }
+      return false;
+    }
+
+    function parseObject(path) {
+      i++; // consume {
+      const seen = new Map();
+      skipWs();
+      if (text[i] === '}') { i++; return true; }
+      while (true) {
+        skipWs();
+        if (text[i] !== '"') return false;
+        const key = parseStringLiteral();
+        if (key === null) return false;
+        seen.set(key, (seen.get(key) || 0) + 1);
+        skipWs();
+        if (text[i] !== ':') return false;
+        i++;
+        const childPath = path + '.' + (isValidIdentifier(key) ? key : JSON.stringify(key));
+        if (!parseValue(childPath)) return false;
+        skipWs();
+        if (text[i] === ',') { i++; continue; }
+        if (text[i] === '}') { i++; break; }
+        return false;
+      }
+      seen.forEach((count, key) => {
+        if (count > 1) {
+          duplicates.push({ path: path + '.' + (isValidIdentifier(key) ? key : JSON.stringify(key)), key: key, occurrences: count });
+        }
+      });
+      return true;
+    }
+
+    function parseArray(path) {
+      i++; // consume [
+      skipWs();
+      if (text[i] === ']') { i++; return true; }
+      let idx = 0;
+      while (true) {
+        if (!parseValue(path + '[' + idx + ']')) return false;
+        idx++;
+        skipWs();
+        if (text[i] === ',') { i++; skipWs(); continue; }
+        if (text[i] === ']') { i++; break; }
+        return false;
+      }
+      return true;
+    }
+
+    parseValue('$');
+    return duplicates;
+  }
+
+  function gotoError(err) {
+    if (!err) return;
+    const pos = { line: Math.max(0, err.line - 1), ch: Math.max(0, err.column - 1) };
+    cm.focus();
+    cm.setCursor(pos);
+    cm.scrollIntoView(pos, 80);
+    cm.addLineClass(pos.line, 'background', 'cm-error-line-flash');
+    setTimeout(() => cm.removeLineClass(pos.line, 'background', 'cm-error-line-flash'), 700);
+  }
+
+  function repairHeuristicNote(strict) {
+    if (strict.message === 'Trailing comma not allowed') return 'Trailing comma detected before a closing bracket.';
+    if (strict.message === 'Expected property name in double quotes') return 'A property name may be unquoted or using single quotes.';
+    return 'An auto-fixable syntax issue was detected (quotes, trailing commas, or comments).';
+  }
+
+  function hideValidationPanel() {
+    validationPanel.hidden = true;
+    validationPanelBody.innerHTML = '';
+    esbGotoErrorBtn.hidden = true;
+    lastValidationError = null;
+  }
+
+  function appendDuplicateKeyRows(duplicates) {
+    duplicates.forEach((dup) => {
+      const row = document.createElement('div');
+      row.className = 'validation-row duplicate';
+      const head = document.createElement('div');
+      head.className = 'validation-row-head';
+      head.textContent = '⚠ Duplicate key';
+      const body = document.createElement('div');
+      body.className = 'validation-row-body';
+      body.textContent = 'Path: ' + dup.path + '  ·  Occurrences: ' + dup.occurrences +
+        '  (only the last value is kept — earlier ones are silently overwritten by JSON.parse)';
+      row.appendChild(head);
+      row.appendChild(body);
+      validationPanelBody.appendChild(row);
+    });
+  }
+
+  // strict: result of validateStrictJson(raw). method: attemptJSONify's
+  // method, or null when skipped (Large File Mode). duplicates: optional
+  // array from findDuplicateKeys — can be non-empty even when strict.valid
+  // is true, since duplicate keys aren't a JSON syntax error, just something
+  // this app refuses to silently discard.
+  function showValidationPanel(strict, method, raw, duplicates) {
+    validationPanel.hidden = false;
+    validationPanelBody.innerHTML = '';
+
+    if (!strict.valid) {
+      lastValidationError = strict;
+      esbGotoErrorBtn.hidden = false;
+
+      const errRow = document.createElement('div');
+      errRow.className = 'validation-row err';
+      errRow.tabIndex = 0;
+      errRow.setAttribute('role', 'button');
+      errRow.setAttribute('aria-label', 'Jump to error location');
+      const errHead = document.createElement('div');
+      errHead.className = 'validation-row-head';
+      errHead.textContent = '✕ Line ' + strict.line + ' : Column ' + strict.column;
+      const errBody = document.createElement('div');
+      errBody.className = 'validation-row-body';
+      errBody.textContent = strict.message +
+        (strict.expected ? (' — expected ' + strict.expected) : '') +
+        (strict.found ? (', found ' + strict.found) : '');
+      errRow.appendChild(errHead);
+      errRow.appendChild(errBody);
+      const jump = () => gotoError(strict);
+      errRow.addEventListener('click', jump);
+      errRow.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); } });
+      validationPanelBody.appendChild(errRow);
+
+      if (method === 'repaired') {
+        const repairRow = document.createElement('div');
+        repairRow.className = 'validation-row repair';
+        const head = document.createElement('div');
+        head.className = 'validation-row-head';
+        head.textContent = '⚠ Possible repair detected';
+        const body = document.createElement('div');
+        body.className = 'validation-row-body';
+        body.textContent = repairHeuristicNote(strict);
+        const actions = document.createElement('div');
+        actions.className = 'validation-row-actions';
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'btn-sm';
+        previewBtn.textContent = 'Preview Repair';
+        const applyBtn = document.createElement('button');
+        applyBtn.className = 'btn-sm primary';
+        applyBtn.textContent = 'Apply Repair';
+        const previewPre = document.createElement('pre');
+        previewPre.className = 'validation-repair-preview';
+        previewPre.hidden = true;
+        previewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          previewPre.textContent = repairJsSyntax(raw);
+          previewPre.hidden = !previewPre.hidden;
+        });
+        applyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          replaceInputValue(repairJsSyntax(raw));
+          if (window.showToast) window.showToast('Repair applied to editor.', 'success');
+        });
+        actions.appendChild(previewBtn);
+        actions.appendChild(applyBtn);
+        repairRow.appendChild(head);
+        repairRow.appendChild(body);
+        repairRow.appendChild(actions);
+        repairRow.appendChild(previewPre);
+        validationPanelBody.appendChild(repairRow);
+      }
+    } else {
+      esbGotoErrorBtn.hidden = true;
+      lastValidationError = null;
+    }
+
+    if (duplicates && duplicates.length) appendDuplicateKeyRows(duplicates);
+  }
+
+  function renderValidityBadge(raw) {
+    const strict = validateStrictJson(raw);
+    const duplicates = findDuplicateKeys(raw);
+    if (strict.valid) {
+      esbValidity.textContent = '✓ Valid JSON';
+      esbValidity.className = 'esb-validity ok';
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { /* shouldn't happen when strict.valid */ }
+      updateJsonStats(parsed);
+      if (duplicates.length) showValidationPanel(strict, null, raw, duplicates);
+      else hideValidationPanel();
+      return;
+    }
+    updateJsonStats(null);
+    const { method } = attemptJSONify(raw);
+    const labelMap = {
+      repaired: '⚠ Repairable JSON detected',
+      structdump: '⚠ JSON-like input detected (struct dump)',
+      jsonl: '⚠ JSON-like input detected (JSON Lines)',
+      lenient: '⚠ JSON-like input detected',
+      keyvalue: '⚠ Key/value text detected',
+      text: '⚠ Plain text detected'
+    };
+    esbValidity.textContent = labelMap[method] || '✕ Invalid JSON';
+    esbValidity.className = 'esb-validity warn';
+    showValidationPanel(strict, method, raw, duplicates);
+  }
+
+  // ---------- Large-file handling: keep the main thread responsive ----------
+  function buildValidatorWorkerSource() {
+    // The worker has its own isolated scope, so every function it calls
+    // must be inlined by source — including isValidIdentifier, which
+    // findDuplicateKeys depends on for path formatting.
+    return 'const isValidIdentifier = ' + isValidIdentifier.toString() + ';\n' +
+      'const validateStrictJson = ' + validateStrictJson.toString() + ';\n' +
+      'const findDuplicateKeys = ' + findDuplicateKeys.toString() + ';\n' +
+      'self.onmessage = function (e) {\n' +
+      '  try { self.postMessage({ strict: validateStrictJson(e.data), duplicates: findDuplicateKeys(e.data) }); }\n' +
+      '  catch (err) { self.postMessage({ strict: { valid: false, message: "Validator error", line: 1, column: 1, index: 0 }, duplicates: [] }); }\n' +
+      '};';
+  }
+
+  function getValidatorWorker() {
+    if (!validatorWorker) {
+      const blob = new Blob([buildValidatorWorkerSource()], { type: 'application/javascript' });
+      validatorWorker = new Worker(URL.createObjectURL(blob));
+    }
+    return validatorWorker;
+  }
+
+  function runValidationInWorker(raw) {
+    const worker = getValidatorWorker();
+    const myId = ++workerRequestId;
+    setValidityIdle('⏳ Validating large document…');
+    worker.onmessage = (e) => {
+      if (myId !== workerRequestId) return; // a newer request superseded this one
+      const strict = e.data.strict;
+      const duplicates = e.data.duplicates || [];
+      updateJsonStats(null);
+      if (strict.valid) {
+        esbValidity.textContent = '✓ Valid JSON';
+        esbValidity.className = 'esb-validity ok';
+        if (duplicates.length) showValidationPanel(strict, null, null, duplicates);
+        else hideValidationPanel();
+      } else {
+        esbValidity.textContent = '✕ Invalid JSON';
+        esbValidity.className = 'esb-validity warn';
+        // Large File Mode deliberately skips the lenient JSON-like
+        // reclassification chain (and the repair preview it powers) to
+        // keep validation of huge invalid documents cheap.
+        showValidationPanel(strict, null, null, duplicates);
+      }
+    };
+    worker.postMessage(raw);
+  }
+
+  function updateLargeFileBannerVisibility(size) {
+    if (size > LARGE_FILE_BYTES) {
+      largeFileBannerText.textContent = 'Large JSON detected — Size: ' + formatByteSize(size);
+      largeFileBanner.hidden = false;
+    } else {
+      largeFileBanner.hidden = true;
+      largeFileDecision = null;
+    }
+  }
+
+  function scheduleValidation() {
+    clearTimeout(validateTimer);
+    const raw = getInputValue();
+    updateEditorStatusCounts();
+    if (!raw.trim()) {
+      largeFileBanner.hidden = true;
+      largeFileDecision = null;
+      setValidityIdle('—');
+      updateJsonStats(null);
+      return;
+    }
+    const size = new Blob([raw]).size;
+    const isLarge = size > LARGE_FILE_BYTES;
+    updateLargeFileBannerVisibility(size);
+    if (isLarge && !largeFileDecision) {
+      setValidityIdle('Large document — choose how to validate above.');
+      return;
+    }
+    validateTimer = setTimeout(() => {
+      if (isLarge && largeFileDecision === 'worker') runValidationInWorker(raw);
+      else renderValidityBadge(raw);
+    }, VALIDATE_DEBOUNCE_MS);
+  }
+
+  largeFileContinueBtn.addEventListener('click', () => {
+    largeFileDecision = 'continue';
+    largeFileBanner.hidden = true;
+    scheduleValidation();
+  });
+  largeFileModeBtn.addEventListener('click', () => {
+    largeFileDecision = 'worker';
+    largeFileBanner.hidden = true;
+    if (window.showToast) window.showToast('Large File Mode enabled — validation now runs in the background.', 'info');
+    scheduleValidation();
+  });
+
+  esbGotoErrorBtn.addEventListener('click', () => gotoError(lastValidationError));
 
   // Shared tokenizer for "struct dump" text: nested { key: value, ... } /
   // [ ... ] where keys and string values are NOT quoted (typical of Go
@@ -1795,9 +2904,14 @@
     }
   }
 
+  function currentIndent() {
+    const v = indentSelect.value;
+    return v === 'tab' ? '\t' : Number(v);
+  }
+
   function formatJSON(sourceName, save) {
     if (save === undefined) save = true;
-    const raw = input.value;
+    const raw = getInputValue();
     hidePathBar();
     if (!raw.trim()) {
       setStatus('Nothing to format — paste or open some text first.', false);
@@ -1809,7 +2923,7 @@
     }
     const { value: parsed, method } = attemptJSONify(raw);
     lastParsed = parsed;
-    lastFormatted = JSON.stringify(parsed, null, 2);
+    lastFormatted = JSON.stringify(parsed, null, currentIndent());
     output.className = '';
     renderOutput();
     const size = new Blob([raw]).size;
@@ -1821,7 +2935,7 @@
   }
 
   function minifyJSON() {
-    const raw = input.value;
+    const raw = getInputValue();
     hidePathBar();
     if (!raw.trim()) {
       setStatus('Nothing to minify — paste or open some text first.', false);
@@ -1830,13 +2944,43 @@
     const { value: parsed, method } = attemptJSONify(raw);
     lastParsed = parsed;
     const minified = JSON.stringify(parsed);
-    lastFormatted = JSON.stringify(parsed, null, 2);
-    input.value = minified;
-    updateInputCount();
+    lastFormatted = JSON.stringify(parsed, null, currentIndent());
+    setInputValue(minified);
     output.className = '';
     renderOutput();
     const stats = computeStats(parsed);
     setStatus(methodStatus(method) + ' · Minified · ' + new Blob([minified]).size.toLocaleString() + ' bytes · ' + stats.keys + ' keys · depth ' + stats.depth, true);
+    addToHistory(null, raw, lastFormatted, methodTypeLabel(method));
+  }
+
+  // Recursively rebuilds objects with alphabetically-sorted keys; arrays
+  // keep their order but have this applied to each element; scalars pass
+  // through untouched.
+  function sortKeysDeep(value) {
+    if (Array.isArray(value)) return value.map(sortKeysDeep);
+    if (value !== null && typeof value === 'object') {
+      const sorted = {};
+      Object.keys(value).sort().forEach((k) => { sorted[k] = sortKeysDeep(value[k]); });
+      return sorted;
+    }
+    return value;
+  }
+
+  function sortKeysAction() {
+    const raw = getInputValue();
+    hidePathBar();
+    if (!raw.trim()) {
+      setStatus('Nothing to sort — paste or open some text first.', false);
+      return;
+    }
+    const { value: parsed, method } = attemptJSONify(raw);
+    lastParsed = sortKeysDeep(parsed);
+    lastFormatted = JSON.stringify(lastParsed, null, currentIndent());
+    replaceInputValue(lastFormatted);
+    output.className = '';
+    renderOutput();
+    const stats = computeStats(lastParsed);
+    setStatus(methodStatus(method) + ' · Keys sorted · ' + stats.keys + ' keys · depth ' + stats.depth, true);
     addToHistory(null, raw, lastFormatted, methodTypeLabel(method));
   }
 
@@ -1919,6 +3063,167 @@
     }
   }
 
+  // ---------- Tree editing: path parsing + mutation on lastParsed ----------
+  // Inverts the "$.a.b[2]" / '$."weird key"' format buildTree's childPath
+  // already uses (for the path bar / copy-path), back into segments so tree
+  // edits can navigate to and mutate the exact spot in lastParsed.
+  function parsePath(pathStr) {
+    const segments = [];
+    let i = 1; // skip leading '$'
+    while (i < pathStr.length) {
+      if (pathStr[i] === '[') {
+        const end = pathStr.indexOf(']', i);
+        segments.push({ type: 'index', value: Number(pathStr.slice(i + 1, end)) });
+        i = end + 1;
+      } else if (pathStr[i] === '"') {
+        let j = i + 1;
+        while (j < pathStr.length && pathStr[j] !== '"') { if (pathStr[j] === '\\') j++; j++; }
+        segments.push({ type: 'key', value: JSON.parse(pathStr.slice(i, j + 1)) });
+        i = j + 1;
+      } else if (pathStr[i] === '.') {
+        i++;
+      } else {
+        let j = i;
+        while (j < pathStr.length && pathStr[j] !== '.' && pathStr[j] !== '[') j++;
+        segments.push({ type: 'key', value: pathStr.slice(i, j) });
+        i = j;
+      }
+    }
+    return segments;
+  }
+
+  function walkSegments(root, segments, end) {
+    let cur = root;
+    for (let k = 0; k < end; k++) {
+      if (cur == null) return undefined;
+      cur = cur[segments[k].value];
+    }
+    return cur;
+  }
+
+  function getAtPath(root, pathStr) {
+    const segments = parsePath(pathStr);
+    return walkSegments(root, segments, segments.length);
+  }
+
+  // { isRoot } for '$', otherwise { isRoot:false, container, key } where
+  // container[key] is exactly the slot pathStr refers to.
+  function resolveSlotBySegments(root, segments, uptoExclusive) {
+    if (uptoExclusive === 0) return { isRoot: true };
+    const container = walkSegments(root, segments, uptoExclusive - 1);
+    return { isRoot: false, container: container, key: segments[uptoExclusive - 1].value };
+  }
+
+  function getSlot(pathStr) {
+    const segments = parsePath(pathStr);
+    return { segments: segments, slot: resolveSlotBySegments(lastParsed, segments, segments.length) };
+  }
+
+  function setValueAtPath(pathStr, newValue) {
+    const slot = getSlot(pathStr).slot;
+    if (slot.isRoot) { lastParsed = newValue; return; }
+    slot.container[slot.key] = newValue;
+  }
+
+  function deleteAtPath(pathStr) {
+    const slot = getSlot(pathStr).slot;
+    if (slot.isRoot) return false;
+    if (Array.isArray(slot.container)) slot.container.splice(slot.key, 1);
+    else delete slot.container[slot.key];
+    return true;
+  }
+
+  // Renaming can't be done via delete+reassign without losing key order, so
+  // this rebuilds the object with the key renamed in place, then replaces
+  // that whole object at its own parent slot.
+  function renameKeyAtPath(pathStr, newKey) {
+    const { segments, slot } = getSlot(pathStr);
+    if (slot.isRoot || Array.isArray(slot.container)) return false;
+    const oldKey = slot.key;
+    if (newKey === oldKey) return true;
+    if (Object.prototype.hasOwnProperty.call(slot.container, newKey)) return false;
+    const rebuilt = {};
+    Object.keys(slot.container).forEach((k) => { rebuilt[k === oldKey ? newKey : k] = slot.container[k]; });
+    const parentSlot = resolveSlotBySegments(lastParsed, segments, segments.length - 1);
+    if (parentSlot.isRoot) lastParsed = rebuilt;
+    else parentSlot.container[parentSlot.key] = rebuilt;
+    return true;
+  }
+
+  function moveArrayItem(pathStr, delta) {
+    const slot = getSlot(pathStr).slot;
+    if (slot.isRoot || !Array.isArray(slot.container)) return false;
+    const from = slot.key;
+    const to = from + delta;
+    if (to < 0 || to >= slot.container.length) return false;
+    const tmp = slot.container[from];
+    slot.container[from] = slot.container[to];
+    slot.container[to] = tmp;
+    return true;
+  }
+
+  // keyOrNull is ignored for arrays (always appends). For objects, refuses
+  // (rather than clobbering) if that key already exists.
+  function addChildAtPath(containerPathStr, keyOrNull, newValue) {
+    const container = containerPathStr === '$' ? lastParsed : getAtPath(lastParsed, containerPathStr);
+    if (Array.isArray(container)) { container.push(newValue); return { ok: true }; }
+    if (container !== null && typeof container === 'object') {
+      if (keyOrNull == null || String(keyOrNull).trim() === '') return { ok: false, reason: 'A property name is required.' };
+      if (Object.prototype.hasOwnProperty.call(container, keyOrNull)) return { ok: false, reason: 'A property named "' + keyOrNull + '" already exists.' };
+      container[keyOrNull] = newValue;
+      return { ok: true };
+    }
+    return { ok: false, reason: 'This value is not an object or array.' };
+  }
+
+  // Tries to interpret typed text the way a JSON value would (numbers,
+  // true/false/null, quoted strings); falls back to treating the raw text
+  // as a plain string, matching this app's existing lenient-input
+  // philosophy (e.g. typing David with no quotes just becomes that string).
+  function coerceEditedValue(text) {
+    try { return JSON.parse(text); } catch (e) { return text; }
+  }
+
+  function collectCollapsedPaths() {
+    const paths = [];
+    output.querySelectorAll('.tree .node.collapsed').forEach((li) => {
+      if (li.dataset.path) paths.push(li.dataset.path);
+    });
+    return paths;
+  }
+
+  function restoreCollapsedPaths(paths) {
+    if (!paths.length) return;
+    const set = new Set(paths);
+    output.querySelectorAll('.tree .node').forEach((li) => {
+      if (set.has(li.dataset.path)) setNodeCollapsed(li, true, false);
+    });
+  }
+
+  // Re-renders the tree from the current lastParsed while keeping whichever
+  // nodes were collapsed (and the scroll position) exactly as they were —
+  // a full rebuild is far simpler and less error-prone than surgically
+  // patching the DOM for five different kinds of structural edit, and this
+  // app's trees are formatter-sized, not large enough for that to matter.
+  function rerenderTreePreservingState() {
+    if (currentView !== 'tree') { renderOutput(); return; }
+    const collapsedPaths = collectCollapsedPaths();
+    const scrollTop = output.scrollTop;
+    renderOutput();
+    restoreCollapsedPaths(collapsedPaths);
+    output.scrollTop = scrollTop;
+  }
+
+  // Every tree mutation funnels through here: push the edit into the
+  // editor (undoable, matching Apply Repair) and refresh the tree in place.
+  // No history entry per micro-edit, same reasoning as Apply Repair.
+  function refreshTreeAfterEdit(message) {
+    lastFormatted = JSON.stringify(lastParsed, null, currentIndent());
+    replaceInputValue(lastFormatted);
+    rerenderTreePreservingState();
+    if (message) setStatus(message, true);
+  }
+
   function buildTree(value) {
     searchableNodes = [];
     const wrapper = document.createElement('span');
@@ -1956,20 +3261,53 @@
       return s;
     }
 
+    // Builds the small hover-revealed "+" that appends an array item or
+    // prompts for a new object property name, shared by empty and
+    // non-empty containers alike.
+    function buildAddButton(path, isArray) {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'row-action-btn tree-add-btn';
+      addBtn.textContent = '+';
+      addBtn.title = isArray ? 'Add item' : 'Add property';
+      addBtn.setAttribute('aria-label', addBtn.title);
+      addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isArray) {
+          if (addChildAtPath(path, null, '').ok) refreshTreeAfterEdit('Added item to ' + path);
+          return;
+        }
+        const key = prompt('New property name:');
+        if (key === null) return;
+        const result = addChildAtPath(path, key, '');
+        if (!result.ok) { if (window.showToast) window.showToast(result.reason, 'warning'); return; }
+        refreshTreeAfterEdit('Added property "' + key + '" to ' + path);
+      });
+      return addBtn;
+    }
+
     function renderContainer(obj, open, close, isArray, path) {
       const keys = isArray ? obj.map((_, i) => i) : Object.keys(obj);
       const container = document.createElement('span');
 
       if (keys.length === 0) {
+        const headerRow = document.createElement('span');
+        headerRow.className = 'node-header-row';
         const punct = document.createElement('span');
         punct.className = 'node-punct';
         punct.textContent = open + close;
-        container.appendChild(punct);
+        headerRow.appendChild(punct);
+        headerRow.appendChild(buildAddButton(path, isArray));
+        container.appendChild(headerRow);
         return container;
       }
 
       const li = document.createElement('li');
       li.className = 'node';
+      li.dataset.path = path;
+
+      const headerRow = document.createElement('span');
+      headerRow.className = 'node-header-row';
 
       const toggle = document.createElement('span');
       toggle.className = 'toggle';
@@ -1987,6 +3325,10 @@
         e.stopPropagation();
         showPath(path, li);
       });
+
+      headerRow.appendChild(toggle);
+      headerRow.appendChild(openPunct);
+      headerRow.appendChild(buildAddButton(path, isArray));
 
       const closePunct = document.createElement('span');
       closePunct.className = 'node-punct';
@@ -2014,7 +3356,8 @@
 
         const val = obj[k];
         const isScalar = val === null || ['string', 'number', 'boolean'].includes(typeof val);
-        childLi.appendChild(renderValue(val, childPath));
+        const valueEl = renderValue(val, childPath);
+        childLi.appendChild(valueEl);
 
         if (idx < keys.length - 1) {
           const comma = document.createElement('span');
@@ -2034,14 +3377,118 @@
           copyValueToClipboard(text, childLi);
         });
 
+        const actions = document.createElement('span');
+        actions.className = 'row-actions';
+
+        if (isScalar) {
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'row-action-btn';
+          editBtn.textContent = '✏️';
+          editBtn.title = 'Edit value';
+          editBtn.setAttribute('aria-label', 'Edit value at ' + childPath);
+          editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const liveValueEl = childLi.querySelector('.node-string, .node-number, .node-boolean, .node-null');
+            if (!liveValueEl) return;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'tree-edit-input';
+            input.value = typeof val === 'string' ? val : JSON.stringify(val);
+            liveValueEl.replaceWith(input);
+            input.focus();
+            input.select();
+            let settled = false;
+            const commit = () => {
+              if (settled) return;
+              settled = true;
+              setValueAtPath(childPath, coerceEditedValue(input.value));
+              refreshTreeAfterEdit('Updated ' + childPath);
+            };
+            const cancel = () => {
+              if (settled) return;
+              settled = true;
+              rerenderTreePreservingState();
+            };
+            input.addEventListener('keydown', (ke) => {
+              if (ke.key === 'Enter') { ke.preventDefault(); commit(); }
+              else if (ke.key === 'Escape') { ke.preventDefault(); cancel(); }
+            });
+            input.addEventListener('blur', commit);
+          });
+          actions.appendChild(editBtn);
+        }
+
+        if (!isArray) {
+          const renameBtn = document.createElement('button');
+          renameBtn.type = 'button';
+          renameBtn.className = 'row-action-btn';
+          renameBtn.textContent = '🏷️';
+          renameBtn.title = 'Rename key';
+          renameBtn.setAttribute('aria-label', 'Rename key ' + keyLabel);
+          renameBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newKey = prompt('Rename key "' + k + '" to:', String(k));
+            if (newKey === null || newKey === String(k)) return;
+            if (!renameKeyAtPath(childPath, newKey)) {
+              if (window.showToast) window.showToast('A property named "' + newKey + '" already exists, or this cannot be renamed.', 'warning');
+              return;
+            }
+            refreshTreeAfterEdit('Renamed "' + k + '" to "' + newKey + '"');
+          });
+          actions.appendChild(renameBtn);
+        }
+
+        if (isArray) {
+          const moveUpBtn = document.createElement('button');
+          moveUpBtn.type = 'button';
+          moveUpBtn.className = 'row-action-btn';
+          moveUpBtn.textContent = '▲';
+          moveUpBtn.title = 'Move up';
+          moveUpBtn.setAttribute('aria-label', 'Move item up');
+          moveUpBtn.disabled = idx === 0;
+          moveUpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (moveArrayItem(childPath, -1)) refreshTreeAfterEdit('Moved item up');
+          });
+          actions.appendChild(moveUpBtn);
+
+          const moveDownBtn = document.createElement('button');
+          moveDownBtn.type = 'button';
+          moveDownBtn.className = 'row-action-btn';
+          moveDownBtn.textContent = '▼';
+          moveDownBtn.title = 'Move down';
+          moveDownBtn.setAttribute('aria-label', 'Move item down');
+          moveDownBtn.disabled = idx === keys.length - 1;
+          moveDownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (moveArrayItem(childPath, 1)) refreshTreeAfterEdit('Moved item down');
+          });
+          actions.appendChild(moveDownBtn);
+        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'row-action-btn danger';
+        deleteBtn.textContent = '✕';
+        deleteBtn.title = isArray ? 'Delete item' : 'Delete property';
+        deleteBtn.setAttribute('aria-label', (isArray ? 'Delete item ' : 'Delete property ') + childPath);
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteAtPath(childPath);
+          refreshTreeAfterEdit('Deleted ' + childPath);
+        });
+        actions.appendChild(deleteBtn);
+
+        childLi.appendChild(actions);
+
         const valueText = isScalar ? (val === null ? 'null' : (typeof val === 'string' ? val : String(val))) : '';
         searchableNodes.push({ el: childLi, text: (keyLabel + ' ' + valueText).toLowerCase(), path: childPath });
 
         ul.appendChild(childLi);
       });
 
-      li.appendChild(toggle);
-      li.appendChild(openPunct);
+      li.appendChild(headerRow);
       li.appendChild(ul);
       li.appendChild(closePunct);
       container.appendChild(li);
@@ -2160,6 +3607,7 @@
   // ---------- Buttons ----------
   document.getElementById('formatBtn').addEventListener('click', () => formatJSON());
   document.getElementById('minifyBtn').addEventListener('click', minifyJSON);
+  document.getElementById('sortKeysBtn').addEventListener('click', sortKeysAction);
 
   // Briefly swaps a button's label to a checkmark to confirm an action landed.
   function flashButton(button, label) {
@@ -2211,8 +3659,7 @@
         setStatus('Clipboard is empty.', false);
         return;
       }
-      input.value = text;
-      updateInputCount();
+      setInputValue(text);
       formatJSON();
       flashButton(e.currentTarget, '✅ Pasted');
     } catch (err) {
@@ -2256,11 +3703,10 @@
   }
 
   document.getElementById('clearBtn').addEventListener('click', () => {
-    const snapshot = { value: input.value, formatted: lastFormatted, parsed: lastParsed };
+    const snapshot = { value: getInputValue(), formatted: lastFormatted, parsed: lastParsed };
     const hadContent = snapshot.value.trim().length > 0;
 
-    input.value = '';
-    updateInputCount();
+    setInputValue('');
     output.className = 'empty';
     output.textContent = 'Formatted or opened JSON will appear here.';
     lastFormatted = '';
@@ -2273,8 +3719,7 @@
 
     if (hadContent) {
       setUndoableStatus('Cleared.', () => {
-        input.value = snapshot.value;
-        updateInputCount();
+        setInputValue(snapshot.value);
         lastFormatted = snapshot.formatted;
         lastParsed = snapshot.parsed;
         if (lastParsed !== undefined) {
@@ -2288,18 +3733,19 @@
     }
   });
 
-  // Keyboard shortcut: Cmd/Ctrl+Enter to format
-  input.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      formatJSON();
+  // The editor's own change/cursorActivity events now drive everything that
+  // used to hang off the plain textarea's input/keydown/paste listeners:
+  // char/line counts, debounced validation, and auto-format-on-paste.
+  let pasteFormatTimer = null;
+  cm.on('change', (instance, changeObj) => {
+    updateInputCount();
+    scheduleValidation();
+    if (changeObj.origin === 'paste') {
+      clearTimeout(pasteFormatTimer);
+      pasteFormatTimer = setTimeout(() => formatJSON(), 0);
     }
   });
-
-  // Auto-format as soon as JSON is pasted in — no need to click "Format".
-  input.addEventListener('paste', () => {
-    setTimeout(() => formatJSON(), 0);
-  });
+  cm.on('cursorActivity', updateCursorStatus);
 
   renderHistory();
   updateInputCount();
@@ -2324,6 +3770,238 @@
   });
 
   applyThemeIcon();
+
+  // ---------- Editor Find / Replace (built on CodeMirror's SearchCursor) ----------
+  function clearFindHighlights() {
+    findMarks.forEach((m) => m.clear());
+    findMarks = [];
+  }
+
+  function buildFindQuery() {
+    const raw = editorFindInput.value;
+    if (!raw) return null;
+    try {
+      if (findState.regex) {
+        let pattern = raw;
+        if (findState.wholeWord) pattern = '\\b(?:' + pattern + ')\\b';
+        return new RegExp(pattern, findState.caseSensitive ? '' : 'i');
+      }
+      let escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (findState.wholeWord) escaped = '\\b' + escaped + '\\b';
+      return new RegExp(escaped, findState.caseSensitive ? '' : 'i');
+    } catch (e) {
+      return null; // invalid regex while the user is still typing it
+    }
+  }
+
+  function updateFindCount() {
+    const hasQuery = editorFindInput.value.length > 0;
+    if (!findState.matches.length) {
+      editorFindCount.textContent = hasQuery ? '0 / 0' : '';
+    } else {
+      editorFindCount.textContent = (findState.index + 1) + ' / ' + findState.matches.length;
+    }
+  }
+
+  function focusFindMatch() {
+    const m = findState.matches[findState.index];
+    if (!m) return;
+    cm.setSelection(m.from, m.to);
+    cm.scrollIntoView({ from: m.from, to: m.to }, 60);
+    updateFindCount();
+  }
+
+  function runFindSearch() {
+    clearFindHighlights();
+    findState.matches = [];
+    findState.index = -1;
+    const query = buildFindQuery();
+    if (!query) { updateFindCount(); return; }
+    const cursor = cm.getSearchCursor(query, { line: 0, ch: 0 });
+    while (cursor.findNext()) {
+      findMarks.push(cm.markText(cursor.from(), cursor.to(), { className: 'cm-search-match' }));
+      findState.matches.push({ from: cursor.from(), to: cursor.to() });
+    }
+    updateFindCount();
+    if (findState.matches.length) {
+      findState.index = 0;
+      focusFindMatch();
+    }
+  }
+
+  function findGoNext(delta) {
+    if (!findState.matches.length) return;
+    findState.index = (findState.index + delta + findState.matches.length) % findState.matches.length;
+    focusFindMatch();
+  }
+
+  function setTogglePressed(btn, pressed) {
+    btn.setAttribute('aria-pressed', String(pressed));
+  }
+
+  function openFindPanel(withReplace) {
+    editorFindRow.hidden = false;
+    editorReplaceRow.hidden = !withReplace;
+    findReplaceToggleBtn.setAttribute('aria-expanded', String(withReplace));
+    findReplaceToggleBtn.textContent = withReplace ? '▾' : '▸';
+    const sel = cm.getSelection();
+    if (sel) editorFindInput.value = sel;
+    editorFindInput.focus();
+    editorFindInput.select();
+    activeOverlay = 'find';
+    runFindSearch();
+  }
+
+  function closeFindPanel() {
+    editorFindRow.hidden = true;
+    clearFindHighlights();
+    if (activeOverlay === 'find') activeOverlay = null;
+    cm.focus();
+  }
+
+  editorFindBtn.addEventListener('click', () => openFindPanel(false));
+  editorFindCloseBtn.addEventListener('click', closeFindPanel);
+  findReplaceToggleBtn.addEventListener('click', () => {
+    const willShow = editorReplaceRow.hidden;
+    editorReplaceRow.hidden = !willShow;
+    findReplaceToggleBtn.setAttribute('aria-expanded', String(willShow));
+    findReplaceToggleBtn.textContent = willShow ? '▾' : '▸';
+  });
+  editorFindInput.addEventListener('input', runFindSearch);
+  editorFindInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); findGoNext(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeFindPanel(); }
+  });
+  editorFindPrevBtn.addEventListener('click', () => findGoNext(-1));
+  editorFindNextBtn.addEventListener('click', () => findGoNext(1));
+  editorFindCaseBtn.addEventListener('click', () => {
+    findState.caseSensitive = !findState.caseSensitive;
+    setTogglePressed(editorFindCaseBtn, findState.caseSensitive);
+    runFindSearch();
+  });
+  editorFindWordBtn.addEventListener('click', () => {
+    findState.wholeWord = !findState.wholeWord;
+    setTogglePressed(editorFindWordBtn, findState.wholeWord);
+    runFindSearch();
+  });
+  editorFindRegexBtn.addEventListener('click', () => {
+    findState.regex = !findState.regex;
+    setTogglePressed(editorFindRegexBtn, findState.regex);
+    runFindSearch();
+  });
+
+  function findReplaceOne() {
+    if (!findState.matches.length) return;
+    const m = findState.matches[findState.index === -1 ? 0 : findState.index];
+    const query = buildFindQuery();
+    if (!query) return;
+    const cursor = cm.getSearchCursor(query, m.from);
+    if (cursor.findNext()) cursor.replace(editorReplaceInput.value);
+    runFindSearch();
+  }
+
+  function findReplaceAll() {
+    const query = buildFindQuery();
+    if (!query || !findState.matches.length) {
+      if (window.showToast) window.showToast('No matches to replace.', 'info');
+      return;
+    }
+    const count = findState.matches.length;
+    if (!confirm('Replace all ' + count + ' match' + (count === 1 ? '' : 'es') + ' with "' + editorReplaceInput.value + '"?')) return;
+    let n = 0;
+    cm.operation(() => {
+      const cursor = cm.getSearchCursor(query, { line: 0, ch: 0 });
+      while (cursor.findNext()) { cursor.replace(editorReplaceInput.value); n++; }
+    });
+    runFindSearch();
+    if (window.showToast) window.showToast('Replaced ' + n + ' occurrence' + (n === 1 ? '' : 's') + '.', 'success');
+  }
+
+  editorReplaceOneBtn.addEventListener('click', findReplaceOne);
+  editorReplaceAllBtn.addEventListener('click', findReplaceAll);
+
+  // ---------- Command palette ----------
+  const paletteCommands = [
+    { label: 'Format JSON', run: () => formatJSON() },
+    { label: 'Minify JSON', run: () => minifyJSON() },
+    { label: 'Sort Keys (alphabetical, recursive)', run: () => sortKeysAction() },
+    { label: 'Copy formatted JSON', run: () => copyFormattedJSON(null) },
+    { label: 'Download formatted.json', run: () => document.getElementById('downloadBtn').click() },
+    { label: 'Clear input and result', run: () => document.getElementById('clearBtn').click() },
+    { label: 'Find in editor', run: () => openFindPanel(false) },
+    { label: 'Find and Replace in editor', run: () => openFindPanel(true) },
+    { label: 'Toggle light / dark theme', run: () => themeToggle.click() },
+    { label: 'Open Compare mode', run: () => document.getElementById('compareModeBtn').click() }
+  ];
+
+  function renderCommandList(list) {
+    commandPaletteList.innerHTML = '';
+    list.forEach((cmd, idx) => {
+      const row = document.createElement('div');
+      row.className = 'command-row' + (idx === 0 ? ' active' : '');
+      row.textContent = cmd.label;
+      row.setAttribute('role', 'option');
+      row.addEventListener('click', () => { closeCommandPalette(); cmd.run(); });
+      commandPaletteList.appendChild(row);
+    });
+  }
+
+  function openCommandPalette() {
+    commandPaletteOverlay.hidden = false;
+    commandPaletteInput.value = '';
+    renderCommandList(paletteCommands);
+    commandPaletteInput.focus();
+    activeOverlay = 'palette';
+  }
+
+  function closeCommandPalette() {
+    commandPaletteOverlay.hidden = true;
+    if (activeOverlay === 'palette') activeOverlay = null;
+    cm.focus();
+  }
+
+  commandPaletteInput.addEventListener('input', () => {
+    const q = commandPaletteInput.value.toLowerCase();
+    renderCommandList(paletteCommands.filter((c) => c.label.toLowerCase().includes(q)));
+  });
+  commandPaletteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeCommandPalette(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const active = commandPaletteList.querySelector('.command-row');
+      if (active) active.click();
+    }
+  });
+  commandPaletteOverlay.addEventListener('click', (e) => {
+    if (e.target === commandPaletteOverlay) closeCommandPalette();
+  });
+
+  function closeActiveOverlay() {
+    if (activeOverlay === 'find') { closeFindPanel(); return; }
+    if (activeOverlay === 'palette') { closeCommandPalette(); return; }
+    // Deliberately not dismissible via Esc/backdrop — only "Skip" marks it
+    // seen, so it keeps reappearing until the user explicitly dismisses it.
+  }
+
+  // ---------- First-time "what's new" banner (per device, until Skip) ----------
+  const WHATS_NEW_KEY = 'jsonViewer.whatsNewSeen.v1';
+  const whatsNewOverlay = document.getElementById('whatsNewOverlay');
+  const whatsNewSkipBtn = document.getElementById('whatsNewSkipBtn');
+
+  whatsNewSkipBtn.addEventListener('click', () => {
+    localStorage.setItem(WHATS_NEW_KEY, '1');
+    whatsNewOverlay.hidden = true;
+  });
+
+  if (!localStorage.getItem(WHATS_NEW_KEY)) {
+    whatsNewOverlay.hidden = false;
+  }
+
+  // ---------- Initial editor state ----------
+  updateEditorStatusCounts();
+  updateCursorStatus();
+  scheduleValidation();
+  requestAnimationFrame(() => cm.refresh());
 
   // Exposed so the Compare feature can reuse the same lenient text-to-JSON
   // conversion as the main formatter (JS-object syntax, unquoted keys,
